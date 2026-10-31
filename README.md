@@ -48,27 +48,33 @@ QzoneUltra 现在可以把 **Life Scheduler 日程插件** 和 **OmniDraw 自拍
 - 可选 pillowmd 风格渲染；渲染失败时自动回退文本。
 - LLM tool 结果会转成自然语言回复，避免向用户暴露 raw JSON、fid、cursor 等内部字段。
 
-## 安装
+## 📦 安装
 
 要求 AstrBot `>=4.16,<5`。
 
-**方式一：插件市场（推荐）**
+**方法一：通过 AstrBot 插件市场（推荐）**
 
-在 AstrBot 管理面板 → 插件市场搜索「QQ空间Ultra CE」，作者为 `DFSMHFJ`。
+1. 打开 AstrBot WebUI
+2. 进入「插件管理」
+3. 搜索「QQ空间Ultra CE」（作者 `DFSMHFJ`）
+4. 点击「安装」
 
-> 装完记得把上游版本（`astrbot_plugin_qzone_ultra`）停用或卸载。本版本不会覆盖它，两个同时启用会抢同一个 `/qzone` 命令组。配置切换见下一节。
+**方法二：手动安装**
 
-**方式二：源码安装**
-
-1. 将本仓库放入 AstrBot 的插件目录，目录名用 `astrbot_plugin_qzone_ultra_ce`。
-2. 在插件目录安装依赖：
+在 AstrBot 插件目录下克隆仓库：
 
 ```bash
-pip install -r requirements.txt
+cd AstrBot/data/plugins          # Docker 部署是 /AstrBot/data/plugins
+git clone https://github.com/DFSMHFJ/astrbot_plugin_qzone_ultra_ce.git
 ```
 
-3. 重启 AstrBot，或在 AstrBot 管理面板重新加载插件。
-4. 在 QQ 私聊或群聊里发送 `/qzone status` 检查 daemon 和 Cookie 状态。
+然后在 WebUI「插件管理」里重载插件列表。目录名必须保持 `astrbot_plugin_qzone_ultra_ce` 才能和 `metadata.yaml` 对上。
+
+依赖不用手动装——AstrBot 加载插件时会读插件根目录的 `requirements.txt` 自动安装。
+
+> **装完记得把上游版本（`astrbot_plugin_qzone_ultra`）停用或卸载。** 本版本不会覆盖它，两个同时启用会抢同一个 `/qzone` 命令组。从上游切换的配置搬运见下一节。
+
+装好后在 QQ 私聊或群聊里发送 `/qzone status` 检查 daemon 和 Cookie 状态。
 
 插件会在首次使用时按需启动本地 daemon。daemon 默认使用 `18999` 端口并只监听 `127.0.0.1`，用于隔离 QQ 空间请求、Cookie 管理和渲染逻辑。除非端口被占用，不建议修改默认端口；如果系统防火墙或安全软件拦截本地连接，请放行本插件的 `18999` 端口。
 
