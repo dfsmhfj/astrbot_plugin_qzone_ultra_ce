@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from .news import normalize_news_scopes
+from .news import DEFAULT_MIX_MODE, MIX_MODES, normalize_news_scopes
 
 DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -193,7 +193,9 @@ class PluginSettings:
         "日程上下文：\n{life_context}\n\n"
         "自拍提示词：\n{image_prompt}"
     )
-    news_scopes: list[str] = field(default_factory=lambda: ["china"])
+    news_sources: list[str] = field(default_factory=list)
+    news_mix_mode: str = "diverse"
+    news_scopes: list[str] = field(default_factory=lambda: ["tech", "news"])
     news_keywords: list[str] = field(default_factory=list)
     news_custom_rss_urls: list[str] = field(default_factory=list)
     news_max_candidates: int = 12
@@ -359,7 +361,17 @@ class PluginSettings:
                 _nested(mapping, "life_publish", "caption_prompt", cls.life_publish_caption_prompt)
                 or cls.life_publish_caption_prompt
             ),
-            news_scopes=normalize_news_scopes(_nested(mapping, "news", "scopes", ["china"])),
+            news_sources=[
+                str(item).strip()
+                for item in _as_list(_nested(mapping, "news", "sources", []))
+                if str(item).strip()
+            ],
+            news_mix_mode=_choice(
+                _nested(mapping, "news", "mix_mode", DEFAULT_MIX_MODE),
+                DEFAULT_MIX_MODE,
+                set(MIX_MODES),
+            ),
+            news_scopes=normalize_news_scopes(_nested(mapping, "news", "scopes", ["tech", "news"])),
             news_keywords=[str(item).strip() for item in _as_list(_nested(mapping, "news", "keywords", [])) if str(item).strip()],
             news_custom_rss_urls=[
                 str(item).strip() for item in _as_list(_nested(mapping, "news", "custom_rss_urls", [])) if str(item).strip()

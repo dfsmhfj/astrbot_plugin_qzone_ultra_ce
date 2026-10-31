@@ -1,10 +1,19 @@
-name: astrbot_plugin_qzone_ultra
-version: 0.9.0
-author: 雪碧bir
-desc: QQ空间Ultra，更稳定的QQ空间插件，支持自动绑定QQ空间，采用独立进程：占用极低、稳定性极高，支持看/评/赞/发/写/删说说、回评、投稿审核、自动发评和 LLM tools。
-display_name: QQ空间Ultra
-repo: https://github.com/diaomin66/astrbot_plugin_qzone_ultra
+name: astrbot_plugin_qzone_ultra_ce
+version: 0.9.1
+author: DFSMHFJ
+desc: >-
+  QQ空间Ultra CE（Community Edition）：基于上游 v0.9.0 修改并独立发布的版本。
+  新闻说说由原本仅支持 Google News RSS 扩展为多源可选（IT之家、中新网、奇客Solidot、极客公园、爱范儿、少数派、Google News），
+  支持 diverse / balanced / weighted / latest 四种混合策略，多源并发抓取并跨源去重。
+  其余功能与上游 v0.9.0 一致；上游后续版本的新特性（如 Qzone Pages 富媒体）本版本尚未包含。
+  需要完整上游功能请安装原版。
+display_name: QQ空间Ultra CE
+repo: https://github.com/DFSMHFJ/astrbot_plugin_qzone_ultra_ce
+social_link: https://github.com/DFSMHFJ
 entry: main.py
 support_platforms:
   - aiocqhttp
 astrbot_version: ">=4.16,<5"
+tags:
+  - QQ空间
+  - 新闻

@@ -325,28 +325,41 @@
     }
   },
   "news": {
-    "description": "谷歌新闻 RSS 新闻说说配置",
+    "description": "新闻 RSS 新闻说说配置",
     "type": "object",
     "items": {
+      "sources": {
+        "description": "新闻源（优先于下方「新闻范围」）",
+        "type": "list",
+        "default": [],
+        "hint": "填源 id：ithome(IT之家) / solidot(奇客) / geekpark(极客公园) / ifanr(爱范儿) / sspai(少数派) / chinanews(中新网) / google_cn(谷歌中国) / google_world(谷歌国际)，也可直接填任意 https RSS 地址。留空则按下方「新闻范围」取源。"
+      },
+      "mix_mode": {
+        "description": "混合方式",
+        "type": "string",
+        "default": "diverse",
+        "hint": "diverse=轮流取源并过滤同一事件（推荐）；balanced=轮流取源，保证每个源都有代表；weighted=按各源权重分配名额；latest=全部按时间排序，谁新谁上。"
+      },
       "scopes": {
         "description": "新闻范围",
         "type": "list",
         "default": [
-          "china"
+          "tech",
+          "news"
         ],
-        "hint": "可填 中国/国际/混合，也兼容 china/world/mixed；混合会同时获取中国和国际新闻。"
+        "hint": "留空 sources 时生效。可填 tech(科技合集) / news(综合新闻) / mixed(全部源) / china(谷歌中国) / world(谷歌国际) / ithome(仅IT之家)，也支持中文：科技、综合、混合、中国、国际。"
       },
       "keywords": {
         "description": "新闻关键词",
         "type": "list",
         "default": [],
-        "hint": "可选；每个关键词会额外请求谷歌新闻 RSS 搜索源。"
+        "hint": "可选；每个关键词会额外请求谷歌新闻 RSS 搜索源（仅对谷歌生效，IT之家等媒体站 RSS 不支持关键词搜索）。"
       },
       "custom_rss_urls": {
-        "description": "自定义谷歌新闻 RSS 地址",
+        "description": "自定义 RSS 地址",
         "type": "list",
         "default": [],
-        "hint": "可选；仅允许谷歌新闻 RSS 地址，必须以 https://news.google.com/rss 开头。"
+        "hint": "可选；支持任意可公开访问的 https RSS 2.0 地址，例如 https://www.ithome.com/rss/ 。不支持 http、内网和本地地址。"
       },
       "max_candidates": {
         "description": "候选新闻数量",
@@ -391,7 +404,7 @@
         "description": "RSS 请求使用系统代理",
         "type": "bool",
         "default": true,
-        "hint": "仅影响谷歌新闻 RSS 请求，不影响 QQ 空间 Cookie 请求；国内环境通常需要开启系统代理。"
+        "hint": "仅影响新闻 RSS 请求，不影响 QQ 空间 Cookie 请求；谷歌新闻在国内环境通常需要开启系统代理，IT之家等国内源可保持开启。"
       }
     }
   },

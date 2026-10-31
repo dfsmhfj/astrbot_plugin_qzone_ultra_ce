@@ -1,0 +1,16 @@
+# 统一行尾，避免 Windows 克隆时产生整仓库“全部文件已修改”的假差异
+* text=auto eol=lf
+
+# 二进制文件不做换行转换与文本 diff
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
+*.zip binary
+*.mp4 binary
+*.pyc binary

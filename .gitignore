@@ -20,3 +20,8 @@ dist/
 *.egg-info/
 
 data/
+
+# 本地备份目录，不要提交
+.backup*/
+*.bak
+*.bak-*

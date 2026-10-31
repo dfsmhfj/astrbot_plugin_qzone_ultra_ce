@@ -1,0 +1,108 @@
+name: Upstream Watch
+
+on:
+  schedule:
+    # 每天 UTC 01:00 = 北京时间 09:00
+    - cron: "0 1 * * *"
+  workflow_dispatch:
+    inputs:
+      ack:
+        description: "只把基线推进到上游最新 SHA，不创建 issue"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  issues: write
+
+env:
+  UPSTREAM: diaomin66/astrbot_plugin_qzone_ultra
+  SHA_FILE: .github/upstream-sha
+  LABEL: upstream-sync
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 读取上游最新 commit
+        id: up
+        run: |
+          set -euo pipefail
+          SHA=$(git ls-remote "https://github.com/${UPSTREAM}.git" refs/heads/main | cut -f1)
+          if [ -z "$SHA" ]; then
+            echo "取不到上游 SHA，检查 ${UPSTREAM} 是否还存在"
+            exit 1
+          fi
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "上游最新：$SHA"
+
+      - name: 读取已记录的基线
+        id: base
+        run: |
+          if [ -f "$SHA_FILE" ]; then
+            echo "sha=$(tr -d '[:space:]' < "$SHA_FILE")" >> "$GITHUB_OUTPUT"
+          else
+            echo "sha=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 首次运行，写入基线
+        if: steps.base.outputs.sha == ''
+        run: |
+          set -euo pipefail
+          SHA="${{ steps.up.outputs.sha }}"
+          mkdir -p "$(dirname "$SHA_FILE")"
+          echo "$SHA" > "$SHA_FILE"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$SHA_FILE"
+          git commit -m "chore: 记录上游基线 ${SHA:0:7}"
+          git push
+
+      - name: 处理上游变更
+        if: steps.base.outputs.sha != '' && steps.base.outputs.sha != steps.up.outputs.sha
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEW: ${{ steps.up.outputs.sha }}
+          OLD: ${{ steps.base.outputs.sha }}
+          ACK: ${{ inputs.ack }}
+        run: |
+          set -euo pipefail
+
+          if [ "${ACK:-}" = "true" ]; then
+            echo "$NEW" > "$SHA_FILE"
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add "$SHA_FILE"
+            git commit -m "chore: 上游基线推进到 ${NEW:0:7}"
+            git push
+            echo "基线已推进到 ${NEW:0:7}"
+            exit 0
+          fi
+
+          gh label create "$LABEL" --color FBCA04 --description "上游同步提醒" --force >/dev/null 2>&1 || true
+          OPEN=$(gh issue list --label "$LABEL" --state open --json number --jq 'length')
+          if [ "$OPEN" -gt 0 ]; then
+            echo "已有未关闭的同步 issue（$OPEN 个），跳过，避免刷屏"
+            exit 0
+          fi
+
+          gh issue create --title "上游有新提交：${NEW:0:7}" --label "$LABEL" --body "$(printf '%s\n' \
+            "上游 \`${UPSTREAM}\` 的 main 分支有新提交。" \
+            "" \
+            "**对比**：https://github.com/${UPSTREAM}/compare/${OLD}...${NEW}" \
+            "" \
+            "---" \
+            "" \
+            "本仓库的 \`news.py\` 已整体重写（源注册表 + 四种混合策略 + 并发抓取），**直接 merge 上游大概率冲突**。" \
+            "" \
+            "处理建议：" \
+            "1. 先看 diff 里有没有动到 \`news.py\` / \`settings.py\` 的 news 段 / \`_conf_schema.json\` 的 news 块；" \
+            "2. 只 cherry-pick 与本仓库改动无关的部分，别整包 merge；" \
+            "3. 合完跑 \`python tests/test_news.py\`，58 项必须全过；" \
+            "4. 改 \`metadata.yaml\` 的 \`version\`，推上去后打新 tag 发 Release。" \
+            "" \
+            "处理完，到 Actions 手动运行 **Upstream Watch** 并勾选 \`ack\`，把基线推进到 \`${NEW:0:7}\`。"
+          )"
+          echo "已创建同步 issue"

@@ -35,7 +35,7 @@ except Exception:
     _quart_response_class = None
 
 PLUGIN_ROOT = Path(__file__).resolve().parent
-PLUGIN_DATA_NAME_FALLBACK = "astrbot_plugin_qzone_ultra"
+PLUGIN_DATA_NAME_FALLBACK = "astrbot_plugin_qzone_ultra_ce"
 REQUIRED_QZONE_BRIDGE_API_VERSION = 2026061301
 LEGACY_MIGRATION_FILES = ("state.json", "drafts.json", "posts.json", "auto_comment_state.json")
 LEGACY_MIGRATION_SENTINEL = ".legacy-qzone-migration.json"
@@ -746,13 +746,14 @@ from qzone_bridge.media import (
 )
 from qzone_bridge.models import FeedEntry
 from qzone_bridge.news import (
-    GoogleNewsRSSClient,
     NewsItem,
+    NewsRSSClient,
     filter_recent_news,
-    google_news_rss_urls,
     is_news_copy_like,
-    merge_news_items,
+    mix_news_items,
+    news_rss_urls,
     normalize_news_scopes,
+    source_label,
 )
 from qzone_bridge.onebot_cookie import (
     COOKIE_ACTIONS,
@@ -3829,20 +3830,24 @@ class QzoneStablePlugin(Star):
             limit,
             default=int(getattr(self.settings, "news_max_candidates", 12) or 12),
         )
-        urls = google_news_rss_urls(
+        # 命令里显式指定范围时以命令为准；否则用配置里勾选的新闻源。
+        configured_sources = list(getattr(self.settings, "news_sources", []) or [])
+        urls = news_rss_urls(
             scopes=self._news_scope_values(scope_override),
             keywords=list(getattr(self.settings, "news_keywords", []) or []),
             custom_urls=list(getattr(self.settings, "news_custom_rss_urls", []) or []),
+            sources=[] if str(scope_override or "").strip() else configured_sources,
         )
-        client = GoogleNewsRSSClient(
+        client = NewsRSSClient(
             timeout=float(getattr(self.settings, "request_timeout", 15.0) or 15.0),
             user_agent=str(getattr(self.settings, "user_agent", "") or ""),
             trust_env=bool(getattr(self.settings, "news_trust_env", True)),
         )
         items = await client.fetch_items(urls)
         recent = filter_recent_news(items, recency_hours=int(getattr(self.settings, "news_recency_hours", 36) or 36))
-        return merge_news_items(
+        return mix_news_items(
             recent,
+            mode=str(getattr(self.settings, "news_mix_mode", "diverse") or "diverse"),
             limit=effective_limit,
             seen_ids=seen_ids or set(),
         )
@@ -3900,7 +3905,9 @@ class QzoneStablePlugin(Star):
             if time_text:
                 meta.append(f"时间：{time_text}")
             if item.scope:
-                meta.append(f"范围：{item.scope}")
+                label = source_label(item.scope)
+                if label and label != item.source:
+                    meta.append(f"源：{label}")
             suffix = f"\n   {'；'.join(meta)}" if meta else ""
             lines.append(f"{index}. {truncate(item.title, 90)}{suffix}")
         lines.append("")
@@ -5385,7 +5392,7 @@ class QzoneStablePlugin(Star):
 
     @filter.command_group("新闻说说")
     def news_feed(self):
-        """Google News RSS 新闻说说命令组。"""
+        """新闻 RSS 新闻说说命令组（支持 Google News、IT之家等）。"""
         pass
 
     @filter.on_astrbot_loaded()
@@ -5765,8 +5772,8 @@ class QzoneStablePlugin(Star):
         text = "\n".join(
             [
                 "新闻说说命令",
-                "新闻说说 获取 [数量] [中国/国际/混合]：获取并缓存候选新闻，按发布时间排序。",
-                "新闻说说 预览 [序号/中国/国际/混合]：预览大模型生成的原创新闻说说，不发布。",
+                "新闻说说 获取 [数量] [中国/国际/IT之家/混合]：获取并缓存候选新闻，按发布时间排序。",
+                "新闻说说 预览 [序号/中国/国际/IT之家/混合]：预览大模型生成的原创新闻说说，不发布。",
                 "新闻说说 发布 <序号>：选择缓存候选新闻，交给大模型生成原创说说并发布。",
                 "兼容命令：获取新闻、新闻列表、新闻说说预览、发布新闻说说。",
             ]
@@ -5775,7 +5782,7 @@ class QzoneStablePlugin(Star):
 
     @news_feed.command("获取")
     async def news_feed_fetch(self, event: AstrMessageEvent):
-        """获取并缓存 Google News RSS 候选新闻。"""
+        """获取并缓存 RSS 候选新闻（支持 Google News、IT之家等）。"""
         arg_text = self._message_after_command(self._event_text(event), ("新闻说说 获取", "新闻说说获取"))
         yield await self._fetch_news_candidates_for_command(event, arg_text)
 
@@ -5794,7 +5801,7 @@ class QzoneStablePlugin(Star):
     @filter.permission_type(filter.PermissionType.ADMIN)
     @filter.command("获取新闻", alias={"新闻列表"})
     async def fetch_news_feed(self, event: AstrMessageEvent):
-        """获取并缓存 Google News RSS 候选新闻。"""
+        """获取并缓存 RSS 候选新闻（支持 Google News、IT之家等）。"""
         arg_text = self._message_after_command(self._event_text(event), ("获取新闻", "新闻列表"))
         yield await self._fetch_news_candidates_for_command(event, arg_text)
 
@@ -5808,7 +5815,7 @@ class QzoneStablePlugin(Star):
     @filter.permission_type(filter.PermissionType.ADMIN)
     @filter.command("新闻说说预览")
     async def preview_news_feed(self, event: AstrMessageEvent):
-        """Preview an original Qzone post generated from Google News RSS candidates."""
+        """Preview an original Qzone post generated from RSS news candidates."""
 
         arg_text = self._message_after_command(self._event_text(event), ("新闻说说预览",))
         yield await self._preview_news_feed_for_command(event, arg_text)
@@ -6117,8 +6124,8 @@ class QzoneStablePlugin(Star):
                 "赞说说 [@用户] [序号/范围]",
                 "发说说 <内容> [图片]",
                 "写说说/写稿 <主题> [图片]",
-                "新闻说说 获取 [数量] [中国/国际/混合]",
-                "新闻说说 预览 [序号/中国/国际/混合]",
+                "新闻说说 获取 [数量] [中国/国际/IT之家/混合]",
+                "新闻说说 预览 [序号/中国/国际/IT之家/混合]",
                 "新闻说说 发布 <序号>",
                 "删说说 <序号>",
                 "回评/回复评论 <稿件ID> [评论序号]",
