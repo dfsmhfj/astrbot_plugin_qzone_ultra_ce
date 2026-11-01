@@ -7,6 +7,7 @@ desc: >-
   支持 diverse / balanced / weighted / latest 四种混合策略，多源并发抓取并跨源去重。
   与上游功能完全重叠，装了本版请停用或卸载上游版本，避免抢同一个 /qzone 命令组。
 display_name: QQ空间Ultra CE
+short_desc: QQ空间Ultra修改版｜新闻说说支持多源RSS，IT之家/少数派等8源任选
 repo: https://github.com/DFSMHFJ/astrbot_plugin_qzone_ultra_ce
 social_link: https://github.com/DFSMHFJ
 entry: main.py

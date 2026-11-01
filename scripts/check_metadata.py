@@ -8,6 +8,7 @@ import io
 import os
 import re
 import sys
+import unicodedata
 import zipfile
 
 try:
@@ -67,6 +68,21 @@ else:
     print(f"name={name}  version={version}  author={author}")
     print(f"display_name={meta.get('display_name', '(未设置)')}")
     print(f"repo={repo}")
+
+    # 市场卡片（MarketPluginCard.vue）优先显示 short_desc，没有才退回 desc；
+    # 该区域是 text-caption + 两行 line-clamp，超出会被静默截断，所以要控宽度。
+    short_desc = str(meta.get("short_desc", "") or "")
+    if not short_desc:
+        fail("缺少 short_desc：市场卡片会退回显示很长的 desc，列表里基本没人看完")
+    else:
+        width = sum(
+            2 if unicodedata.east_asian_width(c) in ("W", "F") else 1 for c in short_desc
+        )
+        print(f"short_desc={short_desc}（显示宽度 {width}）")
+        if width > 88:
+            fail(f"short_desc 显示宽度 {width} 超过两行容量（约 88），卡片上会被截断")
+        elif width > 72:
+            print("注意：short_desc 偏宽，窄屏下可能被卡片两行截断，建议再精简")
 
 if not os.path.isfile(os.path.join(ROOT, "LICENSE")):
     fail("缺少 LICENSE（MIT fork 必须保留原版权声明）")
