@@ -1,56 +1,97 @@
-# QQ空间Ultra CE（QzoneUltra CE）
+# QQ空间Ultra CE
 
-> **本仓库是独立发布版本（Community Edition），基于上游修改，非上游官方仓库。**
->
-> - 上游原仓库：[diaomin66/astrbot_plugin_qzone_ultra](https://github.com/diaomin66/astrbot_plugin_qzone_ultra)，作者 [雪碧bir](https://github.com/diaomin66)
-> - 本版本由 **DFSMHFJ**（[@DFSMHFJ](https://github.com/DFSMHFJ)）独立维护与发布，仓库 [DFSMHFJ/astrbot_plugin_qzone_ultra_ce](https://github.com/DFSMHFJ/astrbot_plugin_qzone_ultra_ce)，在插件市场中拥有独立条目，与上游分开更新。
-> - 核心改动：新闻说说原本只支持 Google News RSS，现扩展为多源可选 —— IT之家、中新网、奇客Solidot、极客公园、爱范儿、少数派、Google News，可自选新闻源，支持 `diverse` / `balanced` / `weighted` / `latest` 四种混合策略，多源并发抓取并跨源去重。
-> - 除新闻 RSS 相关模块外，其余功能与上游一致。需要上游最新特性时请关注原仓库。
->
-> **安装说明**：本版本是上游的独立替代品，插件标识符为 `astrbot_plugin_qzone_ultra_ce`，配置与数据都挂在自己的名字下。它与上游功能完全重叠，**装了本版本就停用或卸载上游版本**——两者命令组同名（`/qzone`、`/新闻说说`…）、daemon 同端口，同时启用只会互相抢命令，没有任何共存价值。从上游切换见下方「从上游迁移」。
+> 基于 [diaomin66/astrbot_plugin_qzone_ultra](https://github.com/diaomin66/astrbot_plugin_qzone_ultra) 的独立发布版，由 [@DFSMHFJ](https://github.com/DFSMHFJ) 维护与发布。
+> 插件标识符 `astrbot_plugin_qzone_ultra_ce`，配置和数据挂在自己名下，与原版互不覆盖。
 
+**本版相对原版只有一处功能变化：新闻说说从「只能读 Google News 的两个固定 URL」扩展成多源 RSS。** 其余模块保持原样。
 
-特别鸣谢 [Zhalslar/astrbot_plugin_qzone](https://github.com/Zhalslar/astrbot_plugin_qzone)。QQ空间Ultra 的中文命令体系、表白墙工作流和部分用户体验设计参考了该项目；本插件在此基础上整合了本地 daemon、Cookie 管理、LLM 工具、发布结果渲染和 AstrBot 兼容层，方便在当前 AstrBot 环境中继续扩展和维护。
+要求 AstrBot `>=4.16,<5`，优先适配 OneBot v11 / aiocqhttp。
 
-QQ空间Ultra 是一个面向 AstrBot 的 QQ 空间插件，提供中文命令、LLM 工具、Cookie 绑定、本地 daemon、图片/视频发布、说说渲染、投稿审核和自动评论能力。插件优先适配 OneBot v11 / aiocqhttp，也支持手动 Cookie 绑定后使用核心 QQ 空间功能。
+问题反馈走 [GitHub Issues](https://github.com/DFSMHFJ/astrbot_plugin_qzone_ultra_ce/issues)。CE 版的问题请提到这里，不要打扰原作者。
 
-交流与反馈：**[提交 GitHub Issue](https://github.com/DFSMHFJ/astrbot_plugin_qzone_ultra_ce/issues)**。上游原版的 QQ 交流群与本版本无关，CE 版的问题请走 Issue，不要打扰原作者。
+> ⚠️ **装了本版就停用或卸载原版**。两者命令组同名（`/qzone`、`/新闻说说`…）、daemon 同端口，同时启用只会互相抢命令，没有任何共存价值。从原版切过来见「从上游迁移」。
 
-## 亮点：自动发布「会生活」的日常说说
+---
 
-QzoneUltra 现在可以把 **Life Scheduler 日程插件** 和 **OmniDraw 自拍生成** 串起来，自动把当天行程变成一条更像真人日常的 QQ 空间说说：先读取日程上下文，再由 LLM 生成适合自拍模式的画面提示词，调用 OmniDraw `generate_selfie(return_result=true)` 取回图片，最后自动配文并发布到 QQ 空间，或按配置先写入草稿。特别感谢木有知大佬的日程插件 [muyouzhi6/astrbot_plugin_life_scheduler](https://github.com/muyouzhi6/astrbot_plugin_life_scheduler)，推荐搭配安装使用，让自动说说能真正基于每天的日程和生活上下文生成。
+## 多源 RSS 新闻说说（本版新增）
 
-这条链路适合做每日生活号、陪伴型人设、自动运营空间：它不只是定时发一段文字，而是把「今天要做什么」变成「看起来真的去过、拍过、分享过」的图文日常。
+原版的 `news.py` 只认两个 Google News 固定地址，国内不挂代理基本拉不到东西。本版改成源注册表，从 8 个源里任选。
 
-<p align="center">
-  <img src="docs/assets/life-selfie-qzone-demo.jpg" alt="Life Scheduler + OmniDraw 自动日常说说效果展示" width="520">
-</p>
+### 内置源
 
-联动配置：
+| id | 名称 | 分类 | 权重 | 备注 |
+| --- | --- | --- | --- | --- |
+| `ithome` | IT之家 | 科技 | 3 | 更新最快，单次约 60 条 |
+| `solidot` | 奇客Solidot | 科技 | 2 | 科技情报 |
+| `geekpark` | 极客公园 | 科技 | 2 | 科技产业 |
+| `ifanr` | 爱范儿 | 科技 | 2 | 科技生活 |
+| `sspai` | 少数派 | 科技 | 1 | 效率与生活 |
+| `chinanews` | 中新网 | 综合 | 3 | 即时新闻，含国际 |
+| `google_cn` | 谷歌新闻·中国 | 综合 | 2 | 国内需代理 |
+| `google_world` | 谷歌新闻·国际 | 国际 | 2 | 国内需代理 |
 
-- 定时任务：复用 `trigger.publish_cron`，开启 `life_publish.enabled=true` 后优先走日常自拍链路。
-- 日程联动：建议搭配 [木有知大佬的 Life Scheduler](https://github.com/muyouzhi6/astrbot_plugin_life_scheduler) 使用，调用 `astrbot_plugin_life_scheduler.get_life_context()` 读取今日安排，让内容贴合当天场景。
-- OmniDraw 联动：强制使用 `return_result=true` 回收图片结果，不依赖 OmniDraw 自己下发消息，方便统一发布到 QQ 空间。
-- 失败策略：支持 `life_publish.image_retry_count`、`life_publish.failure_policy=skip/text_only`，生成失败时可跳过或退回文字发布。
-- 手动体验：管理员发送 `发日常说说` 可立即跑完整链路，并收到“完成文本 + 渲染图片”的直观反馈。
+前 6 个国内源 2026-11-01 实测直连可用，一次抓到 170 条，36 小时内 112 条。两个谷歌源国内需要代理，没配代理时会连接失败，不影响其他源。
 
-## 功能概览
+### 怎么选源
 
-- 查看好友动态、指定用户说说、说说详情、评论和最近访客。
-- 点赞、评论、回复评论、发布说说、删除自己发布的说说。
-- AI 写说说、AI 评论、AI 回评，生成内容会走当前 AstrBot 会话 provider 和人设。
-- 支持文本、图片和单个本地视频发布；视频会交给本地 daemon 走 QQ 空间 Web Cookie/`p_skey` 的 H5 `video_qzone` + `pic_qzone` 链路，先绑定公开相册并创建 `appid=311` 视频说说，再调用权限更新接口做公开修复，最后通过 feed/detail 校验同一 `sVid` 和全部人可见后才返回成功。不会再唤起 QQ/QQNT 客户端、调用 OneBot 端发布 action、要求 QQ upload A2/vLoginData，或退回成视频封面图发布。
-- 看说说、读说说、评论说说、点赞说说和自动评论反馈可复用同款 QQ 空间风格说说卡片渲染。
-- 表白墙投稿、匿名投稿、撤稿、看稿、过稿、拒稿。
-- 定时自动发说说、自动评论好友最新动态，并记录已处理动态，避免重复打扰；其中自动发说说可联动 Life Scheduler + OmniDraw，把今日行程生成自拍图和日常文案后自动发布。
-- 收到消息概率触发自动评论时，会在当前触发会话返回包含原说说和自己评论的 QQ 空间风格渲染图。
-- 新闻 RSS 新闻说说：支持 Google News RSS 与 IT之家等媒体站 RSS，可按数量获取候选新闻并排序缓存，也可选择序号让 LLM 写成原创短评后立即发布或定时发布。
-- 可选 pillowmd 风格渲染；渲染失败时自动回退文本。
-- LLM tool 结果会转成自然语言回复，避免向用户暴露 raw JSON、fid、cursor 等内部字段。
+`news.sources` 优先于 `news.scopes`。三种写法都行：
+
+- **源 id**：`["ithome", "sspai"]`
+- **分组名**：`tech`（5 个科技源）、`news`（中新网）、`mixed`（全部 8 个）、`ithome`、`china`、`world`
+- **自定义地址**：任意 `https://` 开头的 RSS 2.0 地址
+
+留空则按 `news.scopes` 取源，默认 `["tech", "news"]`。
+
+### 四种混合策略
+
+`news.mix_mode` 控制从多源候选里怎么挑。同一批真实数据（12 条候选）跑出来的结果：
+
+| 模式 | 行为 | 实际分布 |
+| --- | --- | --- |
+| `diverse`（默认） | 轮流取源，并过滤标题高度相似的同事件 | 6 源各 2 条，0 重复 |
+| `balanced` | 轮流取源，保证每个源都有代表，不做过重过滤 | 6 源各 2 条 |
+| `weighted` | 按各源权重分配名额 | IT之家 3 / 中新网 3 / 爱范儿 2 / Solidot 2 / 少数派 1 / 极客公园 1 |
+| `latest` | 全部按发布时间倒序，谁新谁上 | IT之家 8 / 中新网 4 |
+
+`latest` 会让更新快的源挤满候选位，适合「就要最新的」场景；想要视野均衡用 `diverse`。
+
+抓取侧：各源并发拉取，最多 6 路。单个源超时或解析失败只记错误，不影响其他源。
+
+> 注意：地址校验是**整批先做**的。列表里只要有一个地址不合法（`http`、内网 IP、本地主机名），整批直接报错，不会跳过它继续抓其他源。
+
+### 命令
+
+```text
+新闻说说 获取 [数量] [中国/国际/IT之家/混合]   拉取候选新闻，按发布时间排序并缓存
+新闻说说 预览 [序号/中国/国际/IT之家/混合]     让 LLM 写成原创说说，只预览不发布
+新闻说说 发布 <序号>                            从缓存里选一条，生成原创说说并立即发布
+```
+
+兼容别名：`获取新闻`、`新闻列表`、`新闻说说预览`、`发布新闻说说`。
+
+命令里显式写了范围（如 `新闻说说 获取 3 IT之家`）就以命令为准；不写才用配置里勾选的源。
+
+### 相关配置
+
+| 键 | 默认 | 说明 |
+| --- | --- | --- |
+| `news.sources` | 空 | 勾选的新闻源，优先于 `news.scopes` |
+| `news.mix_mode` | `diverse` | `diverse` / `balanced` / `weighted` / `latest` |
+| `news.scopes` | `["tech","news"]` | `news.sources` 为空时生效的分组 |
+| `news.custom_rss_urls` | 空 | 额外的自定义 `https` RSS 地址 |
+| `news.keywords` | 空 | 额外的搜索关键词，每个会请求一次 Google News 搜索源（仅对谷歌生效） |
+| `news.max_candidates` | `12` | 默认交给 LLM 的候选数量，命令里可临时覆盖 |
+| `news.recency_hours` | `36` | 只用这个时间范围内的新闻；`0` 表示不按时间过滤 |
+| `news.max_post_length` | `180` | 生成的新闻说说截断长度 |
+| `news.once_per_day` | `true` | 定时任务每天最多成功发布一次；手动发布不受限 |
+| `news.trust_env` | `true` | 新闻 RSS 走系统代理。只影响新闻请求，不影响 QQ 空间 Cookie |
+| `trigger.news_cron` | 空 | 新闻自动发说说的 cron，格式 `分 时 日 月 周`，也支持两段式 `分 时` |
+| `trigger.news_offset` | `0` | 在基准时间之后的随机延迟秒数（0–3600） |
+| `llm.news_provider_id` | 空 | 新闻说说用的 LLM，留空时回退写说说 provider，再回退当前会话默认 |
+
+---
 
 ## 📦 安装
-
-要求 AstrBot `>=4.16,<5`。
 
 **方法一：通过 AstrBot 插件市场（推荐）**
 
@@ -68,28 +109,53 @@ cd AstrBot/data/plugins          # Docker 部署是 /AstrBot/data/plugins
 git clone https://github.com/DFSMHFJ/astrbot_plugin_qzone_ultra_ce.git
 ```
 
-然后在 WebUI「插件管理」里重载插件列表。目录名必须保持 `astrbot_plugin_qzone_ultra_ce` 才能和 `metadata.yaml` 对上。
+然后在 WebUI「插件管理」里重载插件列表。目录名必须保持 `astrbot_plugin_qzone_ultra_ce`，才能和 `metadata.yaml` 对上。
 
 依赖不用手动装——AstrBot 加载插件时会读插件根目录的 `requirements.txt` 自动安装。
 
-> **装完记得把上游版本（`astrbot_plugin_qzone_ultra`）停用或卸载。** 本版本不会覆盖它，两个同时启用会抢同一个 `/qzone` 命令组。从上游切换的配置搬运见下一节。
+装好后在 QQ 私聊或群聊发送 `/qzone status` 检查 daemon 和 Cookie 状态。
 
-装好后在 QQ 私聊或群聊里发送 `/qzone status` 检查 daemon 和 Cookie 状态。
+插件首次使用时按需启动本地 daemon，默认 `18999` 端口、只监听 `127.0.0.1`，用来隔离 QQ 空间请求、Cookie 管理和渲染。除非端口被占用不建议改；被防火墙拦了就放行 `18999`。
 
-插件会在首次使用时按需启动本地 daemon。daemon 默认使用 `18999` 端口并只监听 `127.0.0.1`，用于隔离 QQ 空间请求、Cookie 管理和渲染逻辑。除非端口被占用，不建议修改默认端口；如果系统防火墙或安全软件拦截本地连接，请放行本插件的 `18999` 端口。
+浏览器打开 `http://127.0.0.1:18999/` 或 `/health` 只返回 `daemon_state`、`daemon_port`、`daemon_version` 三个字段，用来确认端口可达。完整状态、Cookie、QQ 号必须走插件命令或带 `X-Qzone-Secret` 的本地请求。
 
-浏览器打开 `http://127.0.0.1:18999/` 或 `/health` 时只返回最小公开健康信息，用于确认端口可达。未认证公开响应只包含 `daemon_state`、`daemon_port`、`daemon_version`，其中 `daemon_state` 只表示进程生命周期，不包含登录、绑定、Cookie、QQ 号、时间戳、token、缓存或 revision 等状态；完整 daemon 状态和登录信息仍必须通过插件命令或携带 `X-Qzone-Secret` 的本地请求获取。
+## 其余功能
+
+新闻以外，本版与原版一致：看 / 读 / 评 / 赞 / 发 / 删说说、评论回复、表白墙投稿与审核、定时自动发说说、自动评论好友新动态、LLM tools、本地 daemon、说说卡片渲染、可选 pillowmd 风格。
+
+定时发说说还能接 Life Scheduler 日程 + OmniDraw 自拍生图，把当天行程变成一条带图的日常说说——由 `life_publish.*` 一组开关控制，详见配置面板的说明。
+
+发布效果示例：
+
+<p align="center">
+  <img src="docs/assets/life-selfie-qzone-demo.jpg" alt="插件发布到 QQ 空间的说说效果" width="520">
+</p>
+
+完整功能说明见[上游仓库](https://github.com/diaomin66/astrbot_plugin_qzone_ultra)。
+
+## 与原版的差别
+
+功能上只动了新闻说说这一块，涉及 4 个文件：
+
+- `qzone_bridge/news.py` — 整体重写为源注册表 + 多源并发抓取 + 四种混合策略 + 跨源去重
+- `qzone_bridge/settings.py` — 新增 `news.sources`、`news.mix_mode`；`news.scopes` 默认值改为 `["tech","news"]`
+- `main.py` — 走 `mix_news_items()`，来源标签用 `source_label()`，命令帮助补新源名
+- `_conf_schema.json` — 新增对应配置项
+
+除此之外还改了插件标识（`metadata.yaml`）、CI 与上游监视工作流、发布自检脚本、回归测试、多行尾统一（`.gitattributes`），以及把演示图从 PNG 换成 JPG 压体积。**`qzone_bridge/` 下其他模块、`pages/`、`daemon_main.py` 与上游逐字节一致。**
+
+逐条改动见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 从上游迁移
 
-本版本的标识符是 `astrbot_plugin_qzone_ultra_ce`，配置和数据都挂在这个新名字下。从上游切过来必须搬一次，否则等于全新安装，Cookie、管理员、新闻源、定时任务全要重配。
+本版标识符是 `astrbot_plugin_qzone_ultra_ce`，配置和数据都挂在新名字下，从原版切过来必须搬一次，否则等于全新安装。
 
-AstrBot 数据目录默认是 `data/`，Docker 部署在 `/AstrBot/data/`。**顺序很重要**，先在面板里把上游版本停用，再动文件，最后才启用本版本——上游还在跑的时候复制，会把它正在写的 cron 状态和 daemon 数据一起拷成脏的。
+**顺序很重要**：先在面板停用原版，再动文件，最后启用本版。原版还在跑的时候复制，会把它正在写的 cron 状态和 daemon 数据一起拷成脏的。
 
 ```bash
 cd <AstrBot 数据目录>
 
-# 0. 先备份，卸载上游插件时插件目录会被删
+# 0. 先备份
 cp -r config/astrbot_plugin_qzone_ultra_config.json /tmp/
 cp -r plugin_data/astrbot_plugin_qzone_ultra /tmp/
 
@@ -101,54 +167,51 @@ cp config/astrbot_plugin_qzone_ultra_config.json \
 cp -r plugin_data/astrbot_plugin_qzone_ultra \
       plugin_data/astrbot_plugin_qzone_ultra_ce
 
-# 3. 面板 → 启用 QQ空间Ultra CE，确认 /qzone status 正常
-
-# 4. 确认无误后卸载上游版本，避免下次误启用
+# 3. 面板 → 启用 QQ空间Ultra CE
+# 4. 确认无误后卸载原版，避免下次误启用
 ```
 
-老版本如果把数据放在插件目录内的 `data/qzone`（而不是 `plugin_data/`），也要一并复制到新插件目录的同名位置。
+老版本如果把数据放在插件目录内的 `data/qzone` 而不是 `plugin_data/`，也要一并复制到新插件目录的同名位置。
 
 迁移完发 `/qzone status`，Cookie、daemon 状态、绑定的 QQ 号都应该还在；再发 `/获取新闻` 确认新闻源配置没丢。
 
 ## Cookie 绑定
 
-推荐在 OneBot v11 环境使用自动绑定。AstrBot 内置适配器名称仍叫 `aiocqhttp`，但插件逻辑按通用 OneBot 协议端处理，不限定某一个实现；LLOneBot、LLBot、NapCat、Shamrock 等能接入 OneBot v11 反向 WebSocket 的实现都走同一套解析和兜底逻辑。
+推荐在 OneBot v11 环境用自动绑定。AstrBot 内置适配器名称仍叫 `aiocqhttp`，但插件按通用 OneBot 协议处理，不限定具体实现——LLOneBot、LLBot、NapCat、Shamrock 等都走同一套解析和兜底逻辑。
 
 ```text
 /qzone autobind
 ```
 
-插件安装、下载后重载或 AstrBot 启动时会自动尝试执行一次 autobind；如果当时 OneBot 客户端稍后才就绪，插件会在首次捕获 OneBot/aiocqhttp 事件后补触发。自动绑定最多尝试 3 次，仍失败时再使用上面的命令或手动 Cookie 绑定。
-
-如果平台无法提供 Cookie，可以手动绑定：
+插件安装、重载、AstrBot 启动时会各尝试一次 autobind；OneBot 客户端稍后才就绪的，会在首次捕获事件后补触发。最多 3 次，仍失败就手动绑：
 
 ```text
 /qzone bind p_skey=...; p_uin=o123456789; uin=o123456789; skey=...
 ```
 
-也可以在 AstrBot 插件配置里填写 `cookies_str`，插件初始化时会尝试自动写入登录态。
+也可以在插件配置里填 `cookies_str`，初始化时自动写入登录态。
 
 ## 中文命令
 
-序号从 `1` 开始，`1` 或 `最新` 表示最新一条，`-1` 表示当前页最后一条。支持范围语法，例如 `1~3`。旧用法里的 `0` 会兼容为最新一条。
+序号从 `1` 开始，`1` 或 `最新` 表示最新一条，`-1` 表示当前页最后一条，支持范围 `1~3`。旧用法里的 `0` 兼容为最新一条。
 
 | 命令 | 别名 | 权限 | 用法 | 说明 |
 | --- | --- | --- | --- | --- |
 | 查看访客 | - | 管理员 | `查看访客` | 查看最近访客 |
 | 看说说 | 查看说说 | 管理员 | `看说说 [@用户/QQ] [序号/范围]` | 查看好友动态或指定用户说说；范围结果会合成一张长图返回 |
-| 读说说 | - | 管理员 | `读说说 [@用户/QQ] [序号/范围]` | 只读取说说并返回同款渲染卡片，不评论、不点赞 |
-| 评说说 | 评论说说 | 管理员 | `评说说 [@用户/QQ] [序号/范围] [评论内容]` | 评论说说并返回原文与评论分区展示的渲染卡片；内容为空时由 AI 生成，空参数会跳过自己和已评论过的说说 |
+| 读说说 | - | 管理员 | `读说说 [@用户/QQ] [序号/范围]` | 只读取并返回渲染卡片，不评论不点赞 |
+| 评说说 | 评论说说 | 管理员 | `评说说 [@用户/QQ] [序号/范围] [评论内容]` | 评论并返回原文与评论分区卡片；内容为空时由 AI 生成 |
 | 赞说说 | - | 管理员 | `赞说说 [@用户/QQ] [序号/范围]` | 点赞说说 |
-| 发说说 | - | 管理员 | `发说说 <文本> [图片/视频]` | 立即发布说说；单视频优先走 daemon 原生视频后台直发，缺少上传材料时阻止发布并提示绑定 |
-| 发日常说说 | - | 管理员 | `发日常说说` | 立即执行 Life Scheduler 日程、LLM 自拍提示词、OmniDraw 自拍图、QQ 空间发布完整链路 |
+| 发说说 | - | 管理员 | `发说说 <文本> [图片/视频]` | 立即发布；单视频优先走 daemon 原生视频后台直发 |
+| 发日常说说 | - | 管理员 | `发日常说说` | 立即执行日程 + 自拍 + 发布完整链路 |
 | 写说说 | 写稿 | 管理员 | `写说说 <主题> [图片/视频]` | 生成待审核或待发布文案 |
-| 新闻说说 获取 | 获取新闻、新闻列表 | 管理员 | `新闻说说 获取 [数量] [中国/国际/IT之家/混合]` | 从 RSS 拉取指定数量候选新闻，按发布时间排序并缓存 |
-| 新闻说说 预览 | 新闻说说预览 | 管理员 | `新闻说说 预览 [序号/中国/国际/IT之家/混合]` | 预览 LLM 基于候选新闻生成的原创说说，不发布 |
-| 新闻说说 发布 | 发布新闻说说、发新闻说说 | 管理员 | `新闻说说 发布 <序号>` | 选择已缓存候选新闻，让 LLM 生成原创说说并立即发布 |
+| 新闻说说 获取 | 获取新闻、新闻列表 | 管理员 | `新闻说说 获取 [数量] [中国/国际/IT之家/混合]` | 拉取候选新闻并缓存 |
+| 新闻说说 预览 | 新闻说说预览 | 管理员 | `新闻说说 预览 [序号/中国/国际/IT之家/混合]` | 预览 LLM 生成的原创说说，不发布 |
+| 新闻说说 发布 | 发布新闻说说 | 管理员 | `新闻说说 发布 <序号>` | 选择缓存候选，生成并立即发布 |
 | 删说说 | - | 管理员 | `删说说 <序号>` | 删除自己发布的说说 |
 | 回评 | 回复评论 | 管理员 | `回评 <稿件ID> [评论序号]` | 回复已缓存稿件或已发布说说下的评论 |
 | 投稿 | - | 所有人 | `投稿 <文本> [图片/视频]` | 投稿到表白墙 |
-| 匿名投稿 | - | 所有人 | `匿名投稿 <文本> [图片/视频]` | 匿名投稿到表白墙 |
+| 匿名投稿 | - | 所有人 | `匿名投稿 <文本> [图片/视频]` | 匿名投稿 |
 | 撤稿 | - | 所有人 | `撤稿 <稿件ID>` | 撤回自己的待审核投稿 |
 | 看稿 | 查看稿件 | 管理员 | `看稿 [稿件ID]` | 查看待审核稿件 |
 | 过稿 | 通过稿件、通过投稿 | 管理员 | `过稿 <稿件ID>` | 审核并发布稿件 |
@@ -171,179 +234,56 @@ cp -r plugin_data/astrbot_plugin_qzone_ultra \
 /qzone like <hostuin> <fid> [appid] [unlike]
 ```
 
-会读取或改变已绑定 QQ 空间状态的兼容命令只允许管理员使用；普通用户仍可使用投稿、匿名投稿和撤回自己的待审核投稿。
+会读写已绑定 QQ 空间状态的兼容命令只允许管理员；普通用户仍可用投稿、匿名投稿和撤稿。
 
 ## LLM 工具
 
-推荐工具：
+推荐：`llm_view_feed`、`llm_publish_feed`
 
-- `llm_view_feed`
-- `llm_publish_feed`
+兼容：`qzone_get_status`、`qzone_list_feed`、`qzone_view_post`、`qzone_detail_feed`、`qzone_publish_post`、`qzone_comment_post`、`qzone_delete_post`、`qzone_like_post`
 
-兼容工具：
-
-- `qzone_get_status`
-- `qzone_list_feed`
-- `qzone_view_post`
-- `qzone_detail_feed`
-- `qzone_publish_post`
-- `qzone_comment_post`
-- `qzone_delete_post`
-- `qzone_like_post`
-
-`qzone_view_post`、`qzone_comment_post`、`qzone_delete_post`、`qzone_like_post` 推荐使用 `target_uin` 加 `selector`。`selector` 可以写 `latest`、`最新`、`第2条`、`2`、`1~3` 或真实 `fid`。旧参数 `hostuin`、`fid`、`appid`、`latest`、`index` 仍保留兼容。
-
-LLM tools 中会读取或改变已绑定 QQ 空间状态的工具默认只允许管理员触发，避免群聊成员借用插件 Cookie 查看或操作账号空间。
-
-点赞会区分“请求已被 QQ 空间接受”和“读回校验暂未同步”。如果 QQ 空间读回有延迟，插件会保持成功结果并提示校验不确定，不会把已接受的点赞误报为失败。
+`selector` 支持 `latest`、`最新`、`第2条`、`2`、`1~3` 或真实 `fid`；旧参数 `hostuin`、`fid`、`appid`、`latest`、`index` 仍兼容。会读写账号状态的工具默认只允许管理员触发，避免群成员借用插件 Cookie 操作账号空间。
 
 ## 配置
-
-常用配置项：
 
 | 配置项 | 默认值 | 说明 |
 | --- | --- | --- |
 | `admin_uins` | 空 | 管理员 QQ 号，多个用英文逗号分隔 |
 | `cookies_str` | 空 | 可选 Cookie 字符串，用于初始化自动绑定 |
-| `daemon_port` | `18999` | 本地 daemon 端口；不建议修改，需在防火墙或安全软件中放行 |
+| `daemon_port` | `18999` | 本地 daemon 端口；不建议修改，需放行防火墙 |
 | `auto_start_daemon` | `true` | 首次使用时自动启动 daemon |
 | `auto_bind_cookie` | `true` | 登录态缺失时尝试从 OneBot 自动获取 Cookie |
 | `manage_group` | 空 | 投稿审核通知群；为空时尝试私发管理员 |
 | `pillowmd_style_dir` | 空 | 可选 pillowmd 样式目录 |
-| `native_video_publish` | `true` | 单个本地视频说说优先交给 daemon 原生视频后台直发；关闭后会拒绝视频发布，避免误把封面/渲染图当作成功 |
-| `render_publish_result` | `true` | 发布成功后返回渲染图；看/读/评/赞说说也会复用同款卡片渲染 |
-| `render_feed_card_limit` | `5` | 看/读/评/赞说说时单次最多渲染的卡片数量；多条会合成一张左对齐长图 |
-| `llm.post_provider_id` | 空 | 写说说使用的 LLM provider；空表示当前会话默认 provider |
-| `llm.news_provider_id` | 空 | 新闻说说使用的 LLM provider；空时优先回退写说说 provider |
-| `llm.comment_provider_id` | 空 | 评论使用的 LLM provider |
-| `llm.reply_provider_id` | 空 | 回评使用的 LLM provider |
-| `trigger.publish_cron` | 空 | 自动发说说 cron 表达式；空表示关闭 |
-| `trigger.news_cron` | 空 | 新闻 RSS 自动发说说 cron 表达式；空表示关闭 |
-| `trigger.comment_cron` | 空 | 自动评论 cron 表达式；空表示关闭 |
-| `trigger.comment_latest_count` | `1` | 每次定时自动评论从好友最新动态中处理的未评论说说条数 |
-| `trigger.publish_offset` | `0` | 自动发说说的随机延迟秒数（0–3600），在基准时间之后 |
-| `trigger.news_offset` | `0` | 新闻自动发说说的随机延迟秒数（0–3600） |
+| `native_video_publish` | `true` | 单个本地视频优先交给 daemon 原生视频直发；关闭后拒绝视频发布 |
+| `render_publish_result` | `true` | 发布成功后返回渲染图 |
+| `render_feed_card_limit` | `5` | 看/读/评/赞说说时单次最多渲染的卡片数，多条合成一张长图 |
+| `llm.post_provider_id` | 空 | 写说说用的 LLM；空表示当前会话默认 |
+| `llm.comment_provider_id` | 空 | 评论用的 LLM |
+| `llm.reply_provider_id` | 空 | 回评用的 LLM |
+| `trigger.publish_cron` | 空 | 自动发说说 cron；空表示关闭 |
+| `trigger.comment_cron` | 空 | 自动评论 cron；空表示关闭 |
+| `trigger.publish_offset` | `0` | 自动发说说的随机延迟秒数（0–3600） |
 | `trigger.comment_offset` | `0` | 自动评论的随机延迟秒数（0–3600） |
-| `trigger.like_when_comment` | `false` | 评说说和自动评论成功后是否顺手点赞 |
-| `trigger.read_prob` | `0.0` | 收到消息时概率触发读说说和自动评论 |
-| `trigger.send_admin` | `false` | 定时发布、定时评论后向管理群或管理员私聊发送结果和渲染图；收到消息概率触发的自动评论会发回当前会话 |
-| `news.sources` | 空 | 勾选的新闻源，优先于 `news.scopes`；可填源 id、分组名或任意 https RSS 地址 |
-| `news.mix_mode` | `diverse` | 多源混合方式：`diverse` / `balanced` / `weighted` / `latest` |
-| `news.scopes` | `["tech","news"]` | `news.sources` 为空时生效的新闻分组：`tech`、`news`、`mixed`、`china`、`world`、`ithome` |
-| `news.keywords` | 空 | 额外 Google News RSS 搜索关键词列表（仅对谷歌生效） |
-| `news.custom_rss_urls` | 空 | 额外的自定义 RSS 地址列表，支持任意可公开访问的 https RSS 2.0 地址（如 `https://www.ithome.com/rss/`） |
-| `news.max_candidates` | `12` | 默认获取或交给 LLM 的新闻候选数量；命令里可临时覆盖 |
-| `news.recency_hours` | `36` | 只用这个时间范围内的新闻；`0` 表示不按发布时间过滤 |
-| `news.max_post_length` | `180` | LLM 生成的新闻说说截断到这个长度 |
-| `news.once_per_day` | `true` | 定时任务每天最多成功发布一次新闻说说；手动选择发布不受该限制 |
-| `news.trust_env` | `true` | 新闻 RSS 请求使用系统代理；只影响新闻 RSS，不影响 QQ 空间 Cookie 请求 |
+| `trigger.comment_latest_count` | `1` | 每次定时自动评论处理几条最新动态 |
+| `trigger.like_when_comment` | `false` | 评论成功后是否顺手点赞 |
+| `trigger.read_prob` | `0.0` | 收到消息时概率触发读说说和自动评论；`0` 关闭 |
+| `trigger.send_admin` | `false` | 定时任务后向管理群或管理员私发结果和渲染图 |
 
-`native_video_publish` 开启后，单个本地视频会通过已验证的 daemon 后台路径发布。只要 QQ 空间 Web Cookie/`p_skey` 可用，daemon 会使用 H5 `sliceUpload/FileUploadVideo` 上传视频和封面，确保封面绑定真实公开相册，调用 `emotion_cgi_publish_v6` 创建 `appid=311` 视频说说，保留发现到的 `tid/fid`，再调用 `emotion_cgi_update` 写入 `ugc_right=1`/`who=1` 做幂等公开修复。只有最终 feed/detail 同时验证到 `appid=311`、同一 `sVid` 和明确全部人可见标记时，插件才报告发布成功；不会使用视频封面图、OneBot 协议端发布 action、Tencent upload A2/vLoginData 或 QQ/QQNT 界面作为回退。
+新闻相关配置见上面「相关配置」一节。完整配置（含 `life_publish.*`）见 `_conf_schema.json`。
 
-`/qzone autovideoauth` 现在只负责确保 daemon 拥有可用的 QQ 空间 Cookie/`p_skey`，用于 H5 视频上传、公开创建、权限修复和公开校验链路；它不再探测或绑定 QQ upload A2/vLoginData。状态里出现“视频直发：可用（公开视频校验）”表示 Cookie/H5 视频路径可用。视频发布契约是：所有成功的视频说说都必须来自 daemon 的 H5 公开创建 + 权限修复 + 公开校验链路；如果缺少 Cookie/`p_skey`、权限更新失败，或 feed/detail 公开校验失败，插件会拒绝宣称成功，而不是重复发布或退回封面图。
-
-完整配置见 `_conf_schema.json`。Cron 表达式格式为 `分 时 日 月 周`，也支持两段式 `分 时`；例如 `30 8 * * *` 或 `30 8` 都表示每天 8:30。
-
-### 新闻源与混合方式
-
-内置源。前 6 个国内源在目标环境实测可用（2026-11-01，容器内直连）；两个谷歌源国内需代理，不配代理时会连接失败，不影响其他源。
-
-| id | 名称 | 分类 | 说明 |
-| --- | --- | --- | --- |
-| `ithome` | IT之家 | 科技 | 更新最快，条目最多 |
-| `solidot` | 奇客Solidot | 科技 | 科技情报 |
-| `geekpark` | 极客公园 | 科技 | 科技产业 |
-| `ifanr` | 爱范儿 | 科技 | 科技生活 |
-| `sspai` | 少数派 | 科技 | 效率与生活 |
-| `chinanews` | 中新网 | 综合 | 即时新闻，含国际 |
-| `google_cn` | 谷歌新闻·中国 | 综合 | 国内通常需要代理 |
-| `google_world` | 谷歌新闻·国际 | 国际 | 国内通常需要代理 |
-
-`news.sources` 除了源 id，还接受分组名 `tech`（全部科技源）、`news`（综合）、`mixed`（全部 8 个源），以及任意 `https://` 开头的自定义 RSS 地址。留空则按 `news.scopes` 取源。
-
-混合方式：
-
-- `diverse`（默认）：轮流从各源取，并过滤标题高度相似的同事件重复。宁可候选少几条，也不让同一件事占满候选位。
-- `balanced`：轮流从各源取一条，保证每个源都有代表，不做过重过滤。
-- `weighted`：按各源权重分配名额（IT之家、中新网权重 3；Solidot、极客公园、爱范儿、谷歌 2；少数派 1）。
-- `latest`：全部按发布时间倒序，谁新谁上；更新快的源可能占满大部分候选位。
-
-各源并发抓取（最多 6 路），单个源超时或解析失败只记录错误，不影响其它源。请求地址校验拒绝 `http`、内网 IP 和本地主机名。
-
-注意：地址校验是整批先做的——只要有一个地址不合法就直接报错，不会跳过它继续抓其他源。只有超时和解析失败才是「只记录错误」。
-
-## 数据目录
-
-运行数据默认写入 AstrBot 分配给插件的数据目录，通常包括：
-
-- Cookie 和登录状态。
-- daemon 状态和保活信息。
-- 投稿草稿、稿件 ID、已发布 fid。
-- 自动评论去重记录。
-- 新闻候选缓存、自动发布日期和已使用新闻候选记录。
-- 渲染临时文件和发布结果图。
+Cron 格式为 `分 时 日 月 周`，也支持两段式 `分 时`，例如 `30 8 * * *` 与 `30 8` 都表示每天 8:30。
 
 ## 排障
 
-- `/qzone status` 显示未绑定：先执行 `/qzone autobind`，失败后使用 `/qzone bind <cookie>`。
-- daemon 无法启动：确认默认 `18999` 端口没有被占用，防火墙或安全软件已放行本地连接，并检查 AstrBot 日志。
-- 浏览器访问 `127.0.0.1:18999`：看到 `ok: true` 代表本地 daemon 端口可达；空或错误的 `X-Qzone-Secret` 仍会返回 401。如果需要 Cookie、QQ 号或完整状态，请使用 `/qzone status`。
-- 自动绑定失败：确认 AstrBot 使用的是 OneBot v11 协议端（AstrBot 适配器名可能显示为 aiocqhttp），且适配器允许获取 Cookie。
-- 图片/视频发布失败：确认图片或引用的视频可被 AstrBot 正常读取；视频会优先使用 OneBot 返回的 `url/download_url/file_url/path/file_id`，再尝试 `get_file`、群/私聊文件直链和 base64 兜底；封面提取依赖系统 `ffmpeg` 或 `imageio-ffmpeg`。
-- LLM 生成内容为空：检查 AstrBot 当前会话 provider，或分别配置 `llm.post_provider_id`、`llm.comment_provider_id`、`llm.reply_provider_id`。
-- 点赞成功但提示校验不确定：通常是 QQ 空间读回延迟，可稍后再查看目标说说。
-
-
-## 定时生活说说联动（Life Scheduler + OmniDraw）
-
-开启后，`trigger.publish_cron` 触发时会先走这条链路：
-
-1. 调用 `astrbot_plugin_life_scheduler.get_life_context()` 获取今日日程
-2. 把日程交给 LLM 生成适合 OmniDraw 自拍模式的提示词
-3. 调用 OmniDraw 的 `generate_selfie(return_result=true)` 获取返回式图片
-4. 自动配文并发说说，或按配置写入草稿
-
-推荐配置：
-
-- `life_publish.enabled=true`
-- `life_publish.use_life_context=true`
-- `life_publish.use_llm_image_prompt=true`
-- `life_publish.use_omnidraw_selfie=true`
-- `life_publish.auto_caption=true`
-- `life_publish.mode=publish` 或 `draft`
-- `life_publish.failure_policy=skip` 或 `text_only`
-- `life_publish.image_retry_count=1`（生图失败后的额外重试次数，0=不重试，最大 5）
-
-说明：
-
-- 这里不会调用 OmniDraw 的自动下发路径，只使用 `return_result=true` 取回图片结果。
-- 如果 Life Scheduler 或 OmniDraw 不可用，会按 `failure_policy` 处理。
-- OmniDraw 未返回图片或调用抛错时，会按 `life_publish.image_retry_count` 重试，每次仍强制传 `return_result=true`。
-- 关闭 `life_publish.enabled` 后，`trigger.publish_cron` 会退回原来的纯文本定时发说说。
-- 管理员可发送 `发日常说说` 立即跑完整链路并直接发布；该指令会沿用各项日程/LLM/OmniDraw 开关，但会强制发布，不受 `life_publish.mode=draft` 影响。
-
-## 与上游的差异
-
-本版本基于上游 `main` 的 [`4221713`](https://github.com/diaomin66/astrbot_plugin_qzone_ultra/commit/4221713b508bf2a88e43e75d1719458d2f69764f)（metadata 版本 `0.9.0`，含 Qzone Pages 富媒体与下载）。
-
-| 类别 | 文件 | 改动 |
-| --- | --- | --- |
-| 功能 | `qzone_bridge/news.py` | 整体重写。原版只认 Google News RSS 的两个固定 URL；本版改为源注册表 + 多源并发抓取 + 四种混合策略 + 跨源去重 |
-| 功能 | `qzone_bridge/settings.py` | 新增 `news.sources`、`news.mix_mode`；`news.scopes` 默认值由 `["china"]` 改为 `["tech","news"]` |
-| 功能 | `main.py` | `_news_candidates` 改走 `mix_news_items()`；来源标签改用 `source_label()`；命令帮助文案补新源名；`PLUGIN_DATA_NAME_FALLBACK` 改为新标识 |
-| 功能 | `_conf_schema.json` | `news` 块新增 `sources` / `mix_mode` 两项，并更新 `custom_rss_urls` 说明 |
-| 标识 | `metadata.yaml` | `name` 改为 `astrbot_plugin_qzone_ultra_ce`，`version` / `author` / `desc` / `repo` 同步 |
-| 工程 | `.github/workflows/ci.yml` | 改为跑语法检查 + 58 项离线回归 + 元数据自检 |
-| 工程 | `.github/workflows/upstream-watch.yml` | 新增，每日比对上游 SHA，有新提交开 issue，不自动合并 |
-| 工程 | `scripts/check_metadata.py` | 新增，发布前自检（字段 / 版本号 / 打包体积） |
-| 工程 | `tests/test_news.py` | 新增，58 项离线回归 |
-| 工程 | `.gitattributes`、`.gitignore`、`.github/upstream-sha` | 新增或调整 |
-| 文档 | `README.md`、`CHANGELOG.md` | 重写为 CE 版说明 |
-| 资源 | `docs/assets/life-selfie-qzone-demo.png` → `.jpg` | 4.0MB → 578KB，打包体积从 15.86MB 降到 12.4MB |
-
-**功能上只有新闻说说模块有变化。** `qzone_bridge/` 下未列出的模块、`pages/`、`daemon_main.py` 与该 commit 逐字节一致——Pages 富媒体、视频发布、日常说说、投稿审核都是上游原样。
-
-支持的新闻源与混合策略见上方「配置」一节的 `news` 部分。
+- **`/qzone status` 显示未绑定**：先 `/qzone autobind`，失败后用 `/qzone bind <cookie>`。
+- **daemon 起不来**：确认 `18999` 没被占用、防火墙已放行，再看 AstrBot 日志。
+- **自动绑定失败**：确认协议端是 OneBot v11，且适配器允许获取 Cookie。
+- **新闻拉不到**：先确认 `news.trust_env` 开着（谷歌源需要代理）；国内源直连即可。单个源挂了不影响其他源，看日志里具体是哪个 URL。
+- **新闻候选太少**：`diverse` 会过滤同事件重复，宁可少几条也不让一件事占满候选位；换成 `balanced` 或调大 `news.max_candidates`。
+- **图片/视频发布失败**：确认媒体文件能被 AstrBot 读到；封面提取依赖系统 `ffmpeg` 或 `imageio-ffmpeg`。
+- **LLM 生成为空**：检查会话 provider，或单独配 `llm.post_provider_id`、`llm.comment_provider_id`。
+- **点赞成功但提示校验不确定**：QQ 空间读回延迟，稍后再看。
 
 ## 开发与测试
 
@@ -351,11 +291,8 @@ LLM tools 中会读取或改变已绑定 QQ 空间状态的工具默认只允许
 pip install -r requirements.txt pyyaml
 
 python -m compileall -q main.py daemon_main.py qzone_bridge   # 语法检查
-python tests/test_news.py                             # 58 项离线回归，不联网
-python scripts/check_metadata.py                      # 发布前自检（字段 / 版本号 / 体积）
+python tests/test_news.py                                     # 58 项离线回归，不联网
+python scripts/check_metadata.py                              # 发布前自检（字段 / 版本号 / 体积）
 ```
 
-`.github/workflows/ci.yml` 在每次 push 与 PR 时运行上述三步。
-
-`.github/workflows/upstream-watch.yml` 每天检查上游 `diaomin66/astrbot_plugin_qzone_ultra` 有无新提交；有新提交则开一个带 `upstream-sync` 标签的 issue 提醒，**不会自动合并**。原因是 `news.py` 已整体重写，上游一动新闻模块就会冲突，自动合并有静默改坏功能的风险。处理完在 Actions 里手动跑一次并勾选 `ack`，即可把基线推进到最新。
-
+三个 workflow：`ci.yml` 在 push 与 PR 时跑上面三步；`upstream-watch.yml` 每天比对上游 `main` 的 SHA，有新提交就开一个 `upstream-sync` issue，**不自动合并**（`news.py` 已整体重写，上游一动新闻模块必冲突）。
