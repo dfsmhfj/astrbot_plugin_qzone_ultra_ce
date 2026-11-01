@@ -221,7 +221,10 @@ LLM tools 中会读取或改变已绑定 QQ 空间状态的工具默认只允许
 | `trigger.news_cron` | 空 | 新闻 RSS 自动发说说 cron 表达式；空表示关闭 |
 | `trigger.comment_cron` | 空 | 自动评论 cron 表达式；空表示关闭 |
 | `trigger.comment_latest_count` | `1` | 每次定时自动评论从好友最新动态中处理的未评论说说条数 |
-
+| `trigger.publish_offset` | `0` | 自动发说说的随机延迟秒数（0–3600），在基准时间之后 |
+| `trigger.news_offset` | `0` | 新闻自动发说说的随机延迟秒数（0–3600） |
+| `trigger.comment_offset` | `0` | 自动评论的随机延迟秒数（0–3600） |
+| `trigger.like_when_comment` | `false` | 评说说和自动评论成功后是否顺手点赞 |
 | `trigger.read_prob` | `0.0` | 收到消息时概率触发读说说和自动评论 |
 | `trigger.send_admin` | `false` | 定时发布、定时评论后向管理群或管理员私聊发送结果和渲染图；收到消息概率触发的自动评论会发回当前会话 |
 | `news.sources` | 空 | 勾选的新闻源，优先于 `news.scopes`；可填源 id、分组名或任意 https RSS 地址 |
@@ -230,6 +233,8 @@ LLM tools 中会读取或改变已绑定 QQ 空间状态的工具默认只允许
 | `news.keywords` | 空 | 额外 Google News RSS 搜索关键词列表（仅对谷歌生效） |
 | `news.custom_rss_urls` | 空 | 额外的自定义 RSS 地址列表，支持任意可公开访问的 https RSS 2.0 地址（如 `https://www.ithome.com/rss/`） |
 | `news.max_candidates` | `12` | 默认获取或交给 LLM 的新闻候选数量；命令里可临时覆盖 |
+| `news.recency_hours` | `36` | 只用这个时间范围内的新闻；`0` 表示不按发布时间过滤 |
+| `news.max_post_length` | `180` | LLM 生成的新闻说说截断到这个长度 |
 | `news.once_per_day` | `true` | 定时任务每天最多成功发布一次新闻说说；手动选择发布不受该限制 |
 | `news.trust_env` | `true` | 新闻 RSS 请求使用系统代理；只影响新闻 RSS，不影响 QQ 空间 Cookie 请求 |
 
@@ -241,7 +246,7 @@ LLM tools 中会读取或改变已绑定 QQ 空间状态的工具默认只允许
 
 ### 新闻源与混合方式
 
-内置源（均已在目标环境实测可用）：
+内置源。前 6 个国内源在目标环境实测可用（2026-11-01，容器内直连）；两个谷歌源国内需代理，不配代理时会连接失败，不影响其他源。
 
 | id | 名称 | 分类 | 说明 |
 | --- | --- | --- | --- |
@@ -264,6 +269,8 @@ LLM tools 中会读取或改变已绑定 QQ 空间状态的工具默认只允许
 - `latest`：全部按发布时间倒序，谁新谁上；更新快的源可能占满大部分候选位。
 
 各源并发抓取（最多 6 路），单个源超时或解析失败只记录错误，不影响其它源。请求地址校验拒绝 `http`、内网 IP 和本地主机名。
+
+注意：地址校验是整批先做的——只要有一个地址不合法就直接报错，不会跳过它继续抓其他源。只有超时和解析失败才是「只记录错误」。
 
 ## 数据目录
 
@@ -317,16 +324,24 @@ LLM tools 中会读取或改变已绑定 QQ 空间状态的工具默认只允许
 
 ## 与上游的差异
 
-本版本基于上游 `main` 的 [`4221713`](https://github.com/diaomin66/astrbot_plugin_qzone_ultra/commit/4221713b508bf2a88e43e75d1719458d2f69764f)（metadata 版本 `0.9.0`，含 Qzone Pages 富媒体与下载）。改动集中在新闻说说模块：
+本版本基于上游 `main` 的 [`4221713`](https://github.com/diaomin66/astrbot_plugin_qzone_ultra/commit/4221713b508bf2a88e43e75d1719458d2f69764f)（metadata 版本 `0.9.0`，含 Qzone Pages 富媒体与下载）。
 
-| 文件 | 改动 |
-| --- | --- |
-| `news.py` | 整体重写。原版只认 Google News RSS 的两个固定 URL；本版改为源注册表 + 多源并发抓取 + 四种混合策略 + 跨源去重 |
-| `settings.py` | 新增 `news.sources`（list）与 `news.mix_mode`（string）；`news.scopes` 默认值由 `["china"]` 改为 `["tech", "news"]` |
-| `main.py` | `_news_candidates` 改走 `mix_news_items()`；来源标签改用 `source_label()`；命令帮助文案补充新源名 |
-| `_conf_schema.json` | `news` 块新增 `sources` / `mix_mode` 两项，并更新 `custom_rss_urls` 说明 |
+| 类别 | 文件 | 改动 |
+| --- | --- | --- |
+| 功能 | `qzone_bridge/news.py` | 整体重写。原版只认 Google News RSS 的两个固定 URL；本版改为源注册表 + 多源并发抓取 + 四种混合策略 + 跨源去重 |
+| 功能 | `qzone_bridge/settings.py` | 新增 `news.sources`、`news.mix_mode`；`news.scopes` 默认值由 `["china"]` 改为 `["tech","news"]` |
+| 功能 | `main.py` | `_news_candidates` 改走 `mix_news_items()`；来源标签改用 `source_label()`；命令帮助文案补新源名；`PLUGIN_DATA_NAME_FALLBACK` 改为新标识 |
+| 功能 | `_conf_schema.json` | `news` 块新增 `sources` / `mix_mode` 两项，并更新 `custom_rss_urls` 说明 |
+| 标识 | `metadata.yaml` | `name` 改为 `astrbot_plugin_qzone_ultra_ce`，`version` / `author` / `desc` / `repo` 同步 |
+| 工程 | `.github/workflows/ci.yml` | 改为跑语法检查 + 58 项离线回归 + 元数据自检 |
+| 工程 | `.github/workflows/upstream-watch.yml` | 新增，每日比对上游 SHA，有新提交开 issue，不自动合并 |
+| 工程 | `scripts/check_metadata.py` | 新增，发布前自检（字段 / 版本号 / 打包体积） |
+| 工程 | `tests/test_news.py` | 新增，58 项离线回归 |
+| 工程 | `.gitattributes`、`.gitignore`、`.github/upstream-sha` | 新增或调整 |
+| 文档 | `README.md`、`CHANGELOG.md` | 重写为 CE 版说明 |
+| 资源 | `docs/assets/life-selfie-qzone-demo.png` → `.jpg` | 4.0MB → 578KB，打包体积从 15.86MB 降到 12.4MB |
 
-其余文件与该 commit 逐字节一致，未改动的模块（Pages 富媒体、视频发布、日常说说等）保持上游原样。
+**功能上只有新闻说说模块有变化。** `qzone_bridge/` 下未列出的模块、`pages/`、`daemon_main.py` 与该 commit 逐字节一致——Pages 富媒体、视频发布、日常说说、投稿审核都是上游原样。
 
 支持的新闻源与混合策略见上方「配置」一节的 `news` 部分。
 
