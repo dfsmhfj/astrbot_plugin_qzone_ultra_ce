@@ -3,7 +3,7 @@
 > 基于 [diaomin66/astrbot_plugin_qzone_ultra](https://github.com/diaomin66/astrbot_plugin_qzone_ultra) 的独立发布版，由 [@DFSMHFJ](https://github.com/DFSMHFJ) 维护与发布。
 > 插件标识符 `astrbot_plugin_qzone_ultra_ce`，配置和数据挂在自己名下，与原版互不覆盖。
 
-**本版相对原版只有一处功能变化：新闻说说从「只能读 Google News 的两个固定 URL」扩展成多源 RSS。** 其余模块保持原样。
+**本版相对原版有两处变化：新闻说说从「只能读 Google News 的两个固定 URL」扩展成多源 RSS；daemon 视频发布链路里的同步阻塞调用改走线程。** 其余模块保持原样。
 
 要求 AstrBot `>=4.16,<5`，优先适配 OneBot v11 / aiocqhttp。
 
@@ -135,14 +135,16 @@ git clone https://github.com/DFSMHFJ/astrbot_plugin_qzone_ultra_ce.git
 
 ## 与原版的差别
 
-功能上只动了新闻说说这一块，涉及 4 个文件：
+功能上动了多源 RSS 新闻这一块，外加一处 daemon 并发修复，共涉及 6 个文件：
 
 - `qzone_bridge/news.py` — 整体重写为源注册表 + 多源并发抓取 + 四种混合策略 + 跨源去重
 - `qzone_bridge/settings.py` — 新增 `news.sources`、`news.mix_mode`；`news.scopes` 默认值改为 `["tech","news"]`
 - `main.py` — 走 `mix_news_items()`，来源标签用 `source_label()`，命令帮助补新源名
 - `_conf_schema.json` — 新增对应配置项
+- `qzone_bridge/daemon.py` — 视频发布链路里四处同步阻塞调用（ffprobe 探时长、ffmpeg 抽封面 ×2、远程视频流式下载）改走 `asyncio.to_thread`，原先一次远程视频发布会把 daemon 事件循环卡住几十秒
+- `qzone_bridge/__init__.py` — `__version__` 跟着插件版本走，否则更新插件后旧 daemon 不会自动重启，新代码不生效
 
-除此之外还改了插件标识（`metadata.yaml`）、CI 与上游监视工作流、发布自检脚本、回归测试、多行尾统一（`.gitattributes`），以及把演示图从 PNG 换成 JPG 压体积。**`qzone_bridge/` 下其他模块、`pages/`、`daemon_main.py` 与上游逐字节一致。**
+除此之外还改了插件标识（`metadata.yaml`）、CI 与上游监视工作流、发布自检脚本、回归测试、行尾统一（`.gitattributes`），以及把演示图从 PNG 换成 JPG 压体积。**`qzone_bridge/` 下其余模块、`pages/`、`daemon_main.py` 与上游逐字节一致。**
 
 逐条改动见 [CHANGELOG.md](CHANGELOG.md)。
 
@@ -278,8 +280,11 @@ Cron 格式为 `分 时 日 月 周`，也支持两段式 `分 时`，例如 `30
 
 - **`/qzone status` 显示未绑定**：先 `/qzone autobind`，失败后用 `/qzone bind <cookie>`。
 - **daemon 起不来**：确认 `18999` 没被占用、防火墙已放行，再看 AstrBot 日志。
+- **升级后 daemon 还是旧版本**：`/qzone status` 里的 `daemon_version` 应该等于插件版本。插件检测到不一致会自动重启 daemon；如果还停在旧值，手动重启一次 AstrBot。
 - **自动绑定失败**：确认协议端是 OneBot v11，且适配器允许获取 Cookie。
 - **新闻拉不到**：先确认 `news.trust_env` 开着（谷歌源需要代理）；国内源直连即可。单个源挂了不影响其他源，看日志里具体是哪个 URL。
+- **`新闻说说 预览` / `发布` 报「余额或配额不足」**：LLM 供应商账户欠费（402）。充钱，或者在插件配置里把 `llm.news_provider_id` 指到有余额的 provider——这项留空会回落到当前会话默认 provider，也就是欠费那个。
+- **报错看不懂**：`新闻说说 预览` / `发布` 失败时会分成余额不足、限流、鉴权失败、请求被拒、服务端故障、超时网络六类，并带上 provider 名和原始错误。按回复里的「建议」那行处理即可。
 - **新闻候选太少**：`diverse` 会过滤同事件重复，宁可少几条也不让一件事占满候选位；换成 `balanced` 或调大 `news.max_candidates`。
 - **图片/视频发布失败**：确认媒体文件能被 AstrBot 读到；封面提取依赖系统 `ffmpeg` 或 `imageio-ffmpeg`。
 - **LLM 生成为空**：检查会话 provider，或单独配 `llm.post_provider_id`、`llm.comment_provider_id`。

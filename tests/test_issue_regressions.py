@@ -184,3 +184,143 @@ def test_all_qzone_llm_tools_are_coroutines_not_async_generators(
         method = getattr(main.QzoneStablePlugin, name)
         assert inspect.iscoroutinefunction(method), name
         assert not inspect.isasyncgenfunction(method), name
+
+
+def _to_thread_targets(source: str) -> set[str]:
+    import ast
+
+    targets: set[str] = set()
+    for node in ast.walk(ast.parse(source)):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "to_thread"
+            and node.args
+            and isinstance(node.args[0], ast.Name)
+        ):
+            targets.add(node.args[0].id)
+    return targets
+
+
+def _direct_calls(source: str, names: set[str]) -> set[str]:
+    import ast
+
+    tree = ast.parse(source)
+    offloaded = {
+        id(arg)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "to_thread"
+        for arg in node.args
+    }
+    direct: set[str] = set()
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id in names
+            and id(node.func) not in offloaded
+        ):
+            direct.add(node.func.id)
+    return direct
+
+
+def test_daemon_offloads_blocking_video_helpers_to_threads() -> None:
+    """ffprobe / ffmpeg / 远程视频流式下载都是同步阻塞调用，在 daemon 里必须交给线程跑。"""
+
+    import textwrap
+
+    from qzone_bridge import daemon
+
+    helpers = {
+        "_probe_video_duration_ms",
+        "materialize_video_source_list",
+        "materialize_video_cover_list",
+        "video_cover_media",
+    }
+    publish_src = textwrap.dedent(inspect.getsource(daemon.QzoneDaemonService.publish_post))
+    native_src = textwrap.dedent(
+        inspect.getsource(daemon.QzoneDaemonService._publish_native_video_if_configured)
+    )
+    h5_src = textwrap.dedent(
+        inspect.getsource(daemon.QzoneDaemonService._publish_h5_video_with_visibility_update)
+    )
+
+    for source in (publish_src, native_src, h5_src):
+        assert not _direct_calls(source, helpers), "有同步调用没走 asyncio.to_thread，会卡住事件循环"
+
+    assert "materialize_video_source_list" in _to_thread_targets(publish_src)
+    assert "materialize_video_cover_list" in _to_thread_targets(publish_src)
+    assert "_probe_video_duration_ms" in _to_thread_targets(native_src)
+    assert "video_cover_media" in _to_thread_targets(h5_src)
+
+
+def test_describe_llm_failure_maps_common_provider_errors() -> None:
+    """供应商报错要能归到具体类别，不能全归成一句“调用失败”。"""
+
+    from qzone_bridge.llm import describe_llm_failure
+
+    cases = (
+        ("Error code: 402 - Insufficient Balance (request_id: 5e5165d0)", "余额"),
+        ("Error code: 429 - rate limit exceeded", "限流"),
+        ("Error code: 401 - Unauthorized: invalid api key", "鉴权"),
+        ("Error code: 503 - Service Unavailable", "服务端"),
+        ("httpx.ConnectTimeout: connection timed out", "超时"),
+        ("openai.BadRequestError: maximum context length is 8192 tokens", "拒绝"),
+    )
+    for raw, keyword in cases:
+        summary, hint = describe_llm_failure(raw)
+        assert keyword in summary, (raw, summary)
+        assert hint, raw
+
+    summary, hint = describe_llm_failure(RuntimeError("something weird happened"))
+    assert summary == "LLM 调用失败"
+    assert hint == ""
+
+
+def test_llm_failure_text_carries_provider_and_raw_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """命令回复里要能看到：结论、建议、用的是哪个 provider、原始错误。"""
+
+    main = _import_main_with_stubs(monkeypatch)
+    plugin = object.__new__(main.QzoneStablePlugin)
+    plugin.settings = types.SimpleNamespace(news_provider_id="", post_provider_id="deepseek-main")
+
+    text = plugin._llm_failure_text(
+        "新闻说说预览",
+        RuntimeError("Error code: 402 - Insufficient Balance"),
+        "news_provider_id",
+        "post_provider_id",
+    )
+
+    assert text.startswith("新闻说说预览失败：")
+    assert "余额" in text
+    assert "建议：" in text
+    assert "provider：deepseek-main" in text
+    assert "402" in text
+
+
+def test_news_command_errors_are_not_generic_anymore() -> None:
+    """回到“失败。”这种一句话回复就是把原因吞了，这里挡住回退。"""
+
+    source = (
+        Path(__file__).resolve().parent.parent.joinpath("main.py").read_text(encoding="utf-8")
+    )
+
+    for generic in ("新闻说说预览失败。", "新闻说说发布失败。", "新闻候选获取失败。"):
+        assert f'"{generic}"' not in source, generic
+    assert source.count("_llm_failure_text(") >= 3
+    assert "_llm_empty_text(" in source
+
+
+def test_bridge_version_tracks_metadata_version() -> None:
+    """daemon 兼容判断用 qzone_bridge.__version__，它必须跟着 metadata.yaml 走。"""
+
+    import yaml
+
+    import qzone_bridge
+
+    root = Path(__file__).resolve().parent.parent
+    meta = yaml.safe_load(root.joinpath("metadata.yaml").read_text(encoding="utf-8"))
+
+    assert qzone_bridge.__version__ == str(meta["version"])

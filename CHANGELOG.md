@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.9.4 - 2026-11-01
+
+### daemon 视频链路去阻塞
+
+对应上架审核给出的 Low 级建议（不阻断上架）。
+
+- `publish_post()` 里 `materialize_video_source_list()`（远程视频走同步 `httpx.Client` 流式下载，超时 60s、上限 512MB）与 `materialize_video_cover_list()` 改为 `asyncio.to_thread` 执行。
+- `_publish_h5_video_with_visibility_update()` 里 `video_cover_media()`（ffmpeg 抽帧，单次 30s 超时、最多试 3 个时间点）改为 `asyncio.to_thread`——这是视频发布真正会走的路径。
+- `_publish_native_video_if_configured()` 里 `_probe_video_duration_ms()`（ffprobe 子进程，10s 超时）同样改为线程执行。
+- 四处改完后，一次视频发布原先会占住事件循环的 60s（下载）+ 90s（抽帧）+ 10s（探时长）全部移到了工作线程。
+- `qzone_bridge.__version__` 改为直接从 `metadata.yaml` 读取，不再手写第二份版本号。`controller._health_payload_is_compatible()` 用 `daemon_version == BRIDGE_VERSION` 判断要不要重启 daemon，而 0.9.1～0.9.3 期间这个值一直停在 `0.9.0`——等于每次发版都不触发 daemon 重启，daemon 侧的改动永远不生效。现在版本号只有 `metadata.yaml` 一个来源，`scripts/check_metadata.py` 会在 CI 里额外校验两者一致。
+- `main.py` 里判断“缓存的 qzone_bridge 是否过期”的 `_local_qzone_bridge_expected_version()` 同步改成读 `metadata.yaml`。它原先用正则从 `__init__.py` 里扒 `__version__ = "x.y.z"` 字面量，版本号改成推导后那条正则什么都匹配不到，过期缓存就不会被驱逐——老代码在热更新后继续跑。
+- 行为不变：函数签名、异常类型、返回结构、日志文案、URL 校验与大小限制都没动，只是把调用挪出事件循环。
+
+### 命令报错按类型给出不同反馈
+
+原先「新闻说说 预览 / 发布 / 获取」只要抛非 `QzoneBridgeError` 的异常，就统一回一句「新闻说说预览失败。」。供应商返回 402 欠费、401 key 失效、429 限流、超时，用户看到的都是同一句话，完全无从判断。
+
+- 新增 `qzone_bridge.llm.describe_llm_failure()`：按余额/配额、限流、鉴权、请求被拒、服务端故障、超时网络六类归类，各给一句结论和一条可操作建议。
+- 新增 `_llm_failure_text()`：回复里带上「结论 + 建议 + 实际使用的 provider + 原始错误」，并把供应商塞在括号里的 `request_id` 去掉再截断，避免聊天里读一堆 uuid。
+- `新闻说说 预览`、`新闻说说 发布` 的兜底分支改用它；`新闻说说 获取` 走 `_failure_text()`，至少带出原始原因。
+- 模型返回空文本时不再一律说「内容过于接近标题」，改为「模型没有返回可用文案」并列出 provider 和两种可能原因。
+- 只改展示层：不吞异常、不改重试策略、不改 LLM 调用路径。
+
 ## v0.9.3 - 2026-11-01
 
 仅文档与元数据改动，无代码改动。

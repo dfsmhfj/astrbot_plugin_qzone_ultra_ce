@@ -1,10 +1,11 @@
 name: astrbot_plugin_qzone_ultra_ce
-version: 0.9.3
+version: 0.9.4
 author: DFSMHFJ
 desc: >-
-  QQ空间Ultra CE（Community Edition）：基于上游 0.9.0（commit 4221713）修改并独立发布的版本，未改动的模块与上游逐字节一致。
+  QQ空间Ultra CE（Community Edition）：基于上游 0.9.0（commit 4221713）修改并独立发布的版本。
   新闻说说由原本仅支持 Google News RSS 扩展为多源可选（IT之家、中新网、奇客Solidot、极客公园、爱范儿、少数派、Google News），
-  支持 diverse / balanced / weighted / latest 四种混合策略，多源并发抓取并跨源去重。
+  支持 diverse / balanced / weighted / latest 四种混合策略，多源并发抓取并跨源去重；
+  另将 daemon 视频发布链路里的 ffprobe / ffmpeg / 远程视频下载改为线程执行，不再阻塞自身事件循环。
   与上游功能完全重叠，装了本版请停用或卸载上游版本，避免抢同一个 /qzone 命令组。
 display_name: QQ空间Ultra CE
 short_desc: QQ空间Ultra修改版｜新闻说说支持多源RSS，IT之家/少数派等8源任选

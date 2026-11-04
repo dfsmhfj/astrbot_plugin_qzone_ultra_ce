@@ -2259,7 +2259,12 @@ class QzoneDaemonService:
         client_key: str,
     ) -> dict[str, Any]:
         try:
-            cover = video_cover_media(video, self.store.root / "video_covers")
+            # 抽帧要跑 ffmpeg 子进程（单次 30s 超时、最多试 3 个时间点），放到线程里
+            cover = await asyncio.to_thread(
+                video_cover_media,
+                video,
+                self.store.root / "video_covers",
+            )
             cover_path = _trusted_daemon_image_path(cover)
             if cover_path is None:
                 raise QzoneParseError(
@@ -2474,7 +2479,8 @@ class QzoneDaemonService:
                 detail={"name": video.name or source_name(video.source), "source": video.source},
             )
         self._ensure_session_ready()
-        duration_ms = _probe_video_duration_ms(path)
+        # ffprobe 是同步子进程（最长 10s），必须走线程：直接调用会卡住 daemon 事件循环
+        duration_ms = await asyncio.to_thread(_probe_video_duration_ms, path)
         file_size = _file_size(path)
         now = datetime.now(timezone.utc)
         upload_time = int(now.timestamp())
@@ -2563,7 +2569,10 @@ class QzoneDaemonService:
     ) -> dict[str, Any]:
         content = sanitize_publish_content(content, content_sanitized=content_sanitized)
         normalized_media = collapse_single_video_cover_companion_media(normalize_media_list(media))
-        normalized_media, _video_sources_changed = materialize_video_source_list(
+        # 远程视频物化用同步 httpx.Client 流式下载（最长 60s、上限 512MB），必须走线程，
+        # 否则一次远程视频发布会把整个 daemon 事件循环卡住，并发请求与 /health 全部排队
+        normalized_media, _video_sources_changed = await asyncio.to_thread(
+            materialize_video_source_list,
             normalized_media,
             self.store.root / "video_sources",
         )
@@ -2587,7 +2596,9 @@ class QzoneDaemonService:
                     "stable_method": "h5_video_publish_update_visibility",
                 },
             )
-        normalized_media, _video_covers_changed = materialize_video_cover_list(
+        # 抽帧要跑 ffmpeg 子进程（单次 30s 超时、最多试 3 个时间点），同样走线程
+        normalized_media, _video_covers_changed = await asyncio.to_thread(
+            materialize_video_cover_list,
             normalized_media,
             self.store.root / "video_covers",
         )

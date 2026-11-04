@@ -8727,7 +8727,8 @@ def test_news_candidates_default_to_trust_env_true(monkeypatch: pytest.MonkeyPat
         news_max_candidates=12,
         news_scopes=["china"],
     )
-    monkeypatch.setattr(main, "GoogleNewsRSSClient", _Client)
+    # CE 版把 GoogleNewsRSSClient 重写为多源 NewsRSSClient，此处按新名字打桩
+    monkeypatch.setattr(main, "NewsRSSClient", _Client)
 
     result = asyncio.run(plugin._news_candidates(seen_ids=set()))
 

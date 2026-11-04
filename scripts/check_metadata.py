@@ -18,6 +18,8 @@ except ImportError:
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 META = os.path.join(ROOT, "metadata.yaml")
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
 REQUIRED = ("name", "desc", "version", "author")
 SEMVER = re.compile(r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$")
 SIZE_LIMIT = 16 * 1024 * 1024
@@ -83,6 +85,20 @@ else:
             fail(f"short_desc 显示宽度 {width} 超过两行容量（约 88），卡片上会被截断")
         elif width > 72:
             print("注意：short_desc 偏宽，窄屏下可能被卡片两行截断，建议再精简")
+
+    # daemon 用 daemon_version == qzone_bridge.__version__ 判断是否要重启，
+    # 两边不一致时升级插件不会触发 daemon 重启，新代码不生效。
+    try:
+        from qzone_bridge import __version__ as bridge_version
+    except Exception as exc:  # pragma: no cover - 只影响提示
+        print(f"注意：无法导入 qzone_bridge 校验桥接版本号（{exc}）")
+    else:
+        print(f"qzone_bridge.__version__={bridge_version}")
+        if bridge_version != version:
+            fail(
+                f"qzone_bridge.__version__（{bridge_version}）与 metadata version（{version}）不一致，"
+                "daemon 会把自己当成旧版之外的东西，升级后可能不重启"
+            )
 
 if not os.path.isfile(os.path.join(ROOT, "LICENSE")):
     fail("缺少 LICENSE（MIT fork 必须保留原版权声明）")

@@ -73,6 +73,65 @@ INSTRUCTION_MARKERS = (
 )
 
 
+_LLM_FAILURE_RULES: tuple[tuple[re.Pattern[str], str, str], ...] = (
+    (
+        re.compile(
+            r"insufficient[\s_-]*(balance|quota)|exceeded your current quota|余额不足|配额不足|欠费",
+            re.IGNORECASE,
+        ),
+        "LLM 供应商账户余额或配额不足",
+        "去供应商后台充值，或在插件配置里把 llm.news_provider_id / llm.post_provider_id 指向有余额的 provider",
+    ),
+    (
+        re.compile(r"\b429\b|rate[\s_-]*limit|too many requests|请求过于频繁|限流", re.IGNORECASE),
+        "LLM 供应商触发限流",
+        "等一会儿再试，或在插件配置里换一个 provider",
+    ),
+    (
+        re.compile(
+            r"\b401\b|\b403\b|invalid[\s_-]*(api[\s_-]*)?key|unauthorized|authentication|permission denied|鉴权|密钥无效",
+            re.IGNORECASE,
+        ),
+        "LLM 供应商鉴权失败",
+        "检查该 provider 的 API Key 是否正确、过期，或该 key 有没有这个模型的权限",
+    ),
+    (
+        re.compile(
+            r"context[\s_-]*length|maximum context|too many tokens|\b413\b|\b400\b|invalid[\s_-]*request",
+            re.IGNORECASE,
+        ),
+        "LLM 拒绝了这个请求",
+        "候选新闻或提示词可能过长，减少数量、调小 news_max_candidates，或换个上下文更长的模型",
+    ),
+    (
+        re.compile(r"\b50[0-4]\b|internal server error|service unavailable|bad gateway|overloaded", re.IGNORECASE),
+        "LLM 供应商服务端故障",
+        "供应商侧问题，过几分钟重试即可，不用改配置",
+    ),
+    (
+        re.compile(
+            r"timeout|timed out|connect|connection|getaddrinfo|network|unreachable|ssl|超时|连接失败",
+            re.IGNORECASE,
+        ),
+        "调用 LLM 超时或网络不可达",
+        "检查服务器到供应商的网络或代理，必要时调大请求超时",
+    ),
+)
+
+
+def describe_llm_failure(exc: BaseException | str) -> tuple[str, str]:
+    """把供应商原始报错归类成「一句话结论 + 可操作建议」。
+
+    认不出来的返回通用结论和空建议，由调用方补上原始错误文本。
+    """
+
+    text = exc if isinstance(exc, str) else str(exc)
+    for pattern, summary, hint in _LLM_FAILURE_RULES:
+        if pattern.search(text):
+            return summary, hint
+    return "LLM 调用失败", ""
+
+
 class QzoneLLM:
     def __init__(self, context: Any, settings: Any):
         self.context = context

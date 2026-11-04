@@ -656,6 +656,20 @@ def _qzone_bridge_contract_is_current(package_root: Path) -> bool:
 
 
 def _local_qzone_bridge_expected_version(package_root: Path) -> str:
+    """期望版本号以插件根目录的 metadata.yaml 为准。
+
+    `qzone_bridge.__version__` 现在从 metadata.yaml 推导，`__init__.py` 里没有字面量了；
+    先读 metadata.yaml，读不到再退回旧的字面量写法，保证老布局也能识别。
+    """
+
+    try:
+        metadata_text = (package_root.parent / "metadata.yaml").read_text(encoding="utf-8-sig")
+    except OSError:
+        metadata_text = ""
+    match = re.search(r"(?m)^version:\s*[\"']?([^\"'\s#]+)", metadata_text)
+    if match:
+        return match.group(1).strip()
+
     try:
         text = (package_root / "__init__.py").read_text(encoding="utf-8")
     except OSError:
@@ -722,7 +736,7 @@ from qzone_bridge.errors import (
     QzoneNeedsRebind,
     QzoneParseError,
 )
-from qzone_bridge.llm import QzoneLLM
+from qzone_bridge.llm import QzoneLLM, describe_llm_failure
 from qzone_bridge.local_media import resolve_trusted_local_media_path
 from qzone_bridge.media import (
     MEDIA_BASE64_SOURCE_KEYS,
@@ -2167,6 +2181,42 @@ class QzoneStablePlugin(Star):
         if parts:
             return f"{exc.message}（{', '.join(dict.fromkeys(parts))}）"
         return exc.message
+
+    def _llm_provider_label(self, *keys: str) -> str:
+        for key in keys:
+            value = str(getattr(self.settings, key, "") or "").strip()
+            if value:
+                return value
+        return "当前会话默认 provider"
+
+    def _llm_failure_text(self, action: str, exc: BaseException, *provider_keys: str) -> str:
+        """把 LLM 供应商异常翻成人话：结论 + 建议 + 用的哪个 provider + 原始错误。"""
+
+        summary, hint = describe_llm_failure(exc)
+        lines = [f"{action}失败：{summary}"]
+        if hint:
+            lines.append(f"建议：{hint}")
+        lines.append(f"provider：{self._llm_provider_label(*provider_keys)}")
+        # 供应商习惯把 request_id 塞在括号里，聊天里读着吵，去掉再截断
+        raw = re.sub(r"\s*\(request_id:?\s*[^)]*\)", "", str(exc).strip())
+        raw = truncate(raw, 120)
+        if raw:
+            lines.append(f"原始错误：{raw}")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _failure_text(action: str, exc: BaseException) -> str:
+        """非 LLM 链路（RSS 抓取等）的兜底：至少把原始原因带出来，别只回一句“失败”。"""
+
+        raw = truncate(str(exc).strip(), 120)
+        return f"{action}失败：{raw}" if raw else f"{action}失败。"
+
+    def _llm_empty_text(self, action: str, *provider_keys: str) -> str:
+        return (
+            f"{action}失败：模型没有返回可用文案。\n"
+            f"provider：{self._llm_provider_label(*provider_keys)}\n"
+            "可能原因：provider 未配置或不可用，或者生成内容过于接近新闻标题。"
+        )
 
     def _log_tool_call_result(self, payload: dict[str, Any]) -> None:
         safe_payload = _safe_for_tool_log(payload)
@@ -5686,7 +5736,7 @@ class QzoneStablePlugin(Star):
             return self._command_result(event, self._error_text(exc))
         except Exception as exc:
             logger.warning("qzone news candidates fetch failed: %s", exc)
-            return self._command_result(event, "新闻候选获取失败。")
+            return self._command_result(event, self._failure_text("新闻候选获取", exc))
 
     async def _preview_news_feed_for_command(self, event: AstrMessageEvent, arg_text: str):
         if not self._is_admin(event):
@@ -5711,9 +5761,14 @@ class QzoneStablePlugin(Star):
             return self._command_result(event, self._error_text(exc))
         except Exception as exc:
             logger.warning("qzone news preview failed: %s", exc)
-            return self._command_result(event, "新闻说说预览失败。")
+            return self._command_result(
+                event,
+                self._llm_failure_text("新闻说说预览", exc, "news_provider_id", "post_provider_id"),
+            )
         if not text.strip():
-            return self._command_result(event, "新闻说说生成失败，可能是内容过于接近标题。")
+            return self._command_result(
+                event, self._llm_empty_text("新闻说说生成", "news_provider_id", "post_provider_id")
+            )
         summary = self._news_items_summary(items)
         response = f"新闻说说预览：\n{text.strip()}"
         if cache_info:
@@ -5737,7 +5792,9 @@ class QzoneStablePlugin(Star):
         try:
             text = await self._generate_original_news_post_text(event, items)
             if not text.strip():
-                return self._command_result(event, "新闻说说生成失败，可能是内容过于接近标题。")
+                return self._command_result(
+                    event, self._llm_empty_text("新闻说说生成", "news_provider_id", "post_provider_id")
+                )
             post = PostPayload(content=text.strip(), media=[])
             await self._ensure_cookie_ready(event)
             await self._ensure_daemon()
@@ -5763,7 +5820,10 @@ class QzoneStablePlugin(Star):
             if profile_task is not None:
                 profile_task.cancel()
             logger.warning("qzone news publish command failed: %s", exc)
-            return self._command_result(event, "新闻说说发布失败。")
+            return self._command_result(
+                event,
+                self._llm_failure_text("新闻说说发布", exc, "news_provider_id", "post_provider_id"),
+            )
         return await self._publish_result(event, post, payload, profile_task=profile_task)
 
     @news_feed.command("帮助")
