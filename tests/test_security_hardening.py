@@ -7051,7 +7051,7 @@ def test_auto_news_publish_once_publishes_and_records_state(
             )
         ]
 
-    async def fake_generate(event, items):
+    async def fake_generate(event, items, **kwargs):
         captured["generate_items"] = items
         return "人在太空待久了，回到地面第一件小事都很具体。"
 
@@ -7235,7 +7235,7 @@ def test_generate_original_news_post_text_retries_copy_like_output(
     item = main.NewsItem(title="航天员返回地球后最想洗头", source="羊城晚报", item_id="news-1")
     responses = ["航天员返回地球后最想洗头", "回到地面后，最想念的也许就是那些日常小事。"]
 
-    async def fake_generate(event, items):
+    async def fake_generate(event, items, **kwargs):
         return responses.pop(0)
 
     plugin._generate_news_post_text = fake_generate

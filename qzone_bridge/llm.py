@@ -228,8 +228,13 @@ class QzoneLLM:
         if callable(text_chat):
             attempts: list[dict[str, Any]] = [{"prompt": prompt}]
             if system_prompt:
+                # contexts 必须显式传空：不传的话 text_chat 会按 provider 的默认
+                # session_id 把历史对话读出来，模型顺着旧聊天写，而不是回答 prompt
+                # 里的新闻——表现就是「发出来的内容和新闻无关」。
                 attempts.insert(0, {"prompt": prompt, "contexts": [], "system_prompt": system_prompt})
-                attempts.insert(1, {"prompt": prompt, "context": [], "system_prompt": system_prompt})
+                # 兜底给不认 contexts 的老签名；这里不能再写错成 context，
+                # 那个 key 会被 **kwargs 静默吞掉，等于又没传 contexts。
+                attempts.insert(1, {"prompt": prompt, "system_prompt": system_prompt})
             for kwargs in attempts:
                 try:
                     response = await self._maybe_await(text_chat(**kwargs))
@@ -380,11 +385,25 @@ class QzoneLLM:
             parts.append(f"范围：{item.scope}")
         return "；".join(parts)
 
-    async def generate_news_post_text(self, event: Any, items: list[NewsItem]) -> str:
-        lines = [self._news_item_line(index, item) for index, item in enumerate(items[:20], start=1)]
+    async def generate_news_post_text(
+        self,
+        event: Any,
+        items: list[NewsItem],
+        *,
+        focus_item: NewsItem | None = None,
+    ) -> str:
+        focus_rule = ""
+        heading = "候选新闻："
+        if focus_item is not None:
+            lines = [self._news_item_line(1, focus_item)]
+            heading = "要评论的新闻："
+            focus_rule = "本次只允许评论下面这一条新闻，不要写成别的新闻，也不要泛泛感慨。\n\n"
+        else:
+            lines = [self._news_item_line(index, item) for index, item in enumerate(items[:20], start=1)]
         prompt = (
             f"{self.settings.news_prompt}\n\n{NEWS_OUTPUT_RULES}\n\n"
-            "候选新闻：\n"
+            + focus_rule
+            + heading
             + "\n".join(lines)
         )
         provider_id = self.settings.news_provider_id or self.settings.post_provider_id

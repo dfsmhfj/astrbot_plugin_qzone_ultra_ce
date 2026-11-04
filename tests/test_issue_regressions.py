@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import json
 import types
 from dataclasses import asdict
 from datetime import datetime
@@ -324,3 +325,146 @@ def test_bridge_version_tracks_metadata_version() -> None:
     meta = yaml.safe_load(root.joinpath("metadata.yaml").read_text(encoding="utf-8"))
 
     assert qzone_bridge.__version__ == str(meta["version"])
+
+
+def test_news_reference_scores_pick_the_news_the_post_is_about() -> None:
+    """自动发布的正文提到哪条新闻，就得能认出来是哪条。"""
+
+    from qzone_bridge.news import NewsItem, best_matching_news_item
+
+    items = [
+        NewsItem(title="国足客场一比零小胜对手", source="来源甲", item_id="news-1"),
+        NewsItem(title="苹果发布会定档下月", source="来源乙", item_id="news-2"),
+    ]
+    text = "苹果这次发布会定在下个月，又要开始一年一度的挤牙膏了。"
+
+    matched, score = best_matching_news_item(text, items)
+    assert matched is not None and matched.item_id == "news-2"
+    assert score > 0.15
+
+
+def test_news_reference_scores_reject_generic_chatter() -> None:
+    from qzone_bridge.news import NewsItem, best_matching_news_item
+
+    items = [
+        NewsItem(title="苹果发布会定档下月", source="来源甲", item_id="news-1"),
+        NewsItem(title="台风今夜登陆广东沿海", source="来源乙", item_id="news-2"),
+    ]
+
+    matched, score = best_matching_news_item("今天心情不错，随便说两句。", items)
+    assert matched is None
+    assert score < 0.15
+
+
+def _news_plugin(main, tmp_path: Path, candidates: list, generate):
+    class _Logger:
+        def __init__(self) -> None:
+            self.infos: list[str] = []
+            self.warnings: list[str] = []
+
+        def debug(self, *args, **kwargs): ...
+
+        def exception(self, *args, **kwargs): ...
+
+        def info(self, message, *args, **kwargs):
+            self.infos.append(message % args if args else str(message))
+
+        def warning(self, message, *args, **kwargs):
+            self.warnings.append(message % args if args else str(message))
+
+    class _Controller:
+        async def publish_post(self, **kwargs):
+            return {"fid": "fid-news", "message": "ok"}
+
+    async def fake_ready(*args, **kwargs):
+        return None
+
+    async def fake_candidates(**kwargs):
+        return list(candidates)
+
+    async def fake_notify(post, payload, message):
+        captured["message"] = message
+
+    captured: dict[str, object] = {}
+    logger_stub = _Logger()
+
+    plugin = object.__new__(main.QzoneStablePlugin)
+    plugin.settings = types.SimpleNamespace(news_once_per_day=False)
+    plugin.data_dir = tmp_path
+    plugin.controller = _Controller()
+    plugin._ensure_cookie_ready = fake_ready
+    plugin._ensure_daemon = fake_ready
+    plugin._news_candidates = fake_candidates
+    plugin._generate_original_news_post_text = generate
+    plugin._notify_admin_publish_result = fake_notify
+    return plugin, captured, logger_stub
+
+
+def test_auto_news_publish_records_the_news_it_actually_wrote_about(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """模型自己挑的是第 3 条，就不能把第 1 条记成「参考新闻」。"""
+
+    main = _import_main_with_stubs(monkeypatch)
+    candidates = [
+        main.NewsItem(title="国足客场一比零小胜对手", source="来源甲", item_id="news-1"),
+        main.NewsItem(title="台风今夜登陆广东沿海", source="来源乙", item_id="news-2"),
+        main.NewsItem(title="苹果发布会定档下月举行", source="来源丙", item_id="news-3"),
+    ]
+
+    async def fake_generate(event, items, **kwargs):
+        return "苹果这场发布会定在下月，估计还是老一套的挤牙膏。"
+
+    plugin, captured, logger_stub = _news_plugin(main, tmp_path, candidates, fake_generate)
+    monkeypatch.setattr(main, "logger", logger_stub)
+
+    asyncio.run(plugin._auto_news_publish_once())
+
+    state = json.loads((tmp_path / "news_publish_state.json").read_text(encoding="utf-8"))
+    assert state["published"][0]["candidate_ids"] == ["news-3"]
+    assert state["published"][0]["title"] == "苹果发布会定档下月举行"
+    assert "苹果发布会定档下月举行" in str(captured["message"])
+
+
+def test_auto_news_publish_regenerates_when_text_matches_no_news(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """一条都对不上就指定第一条重写，别把无关的感慨直接发出去。"""
+
+    main = _import_main_with_stubs(monkeypatch)
+    candidates = [
+        main.NewsItem(title="苹果发布会定档下月举行", source="来源甲", item_id="news-1"),
+        main.NewsItem(title="台风今夜登陆广东沿海", source="来源乙", item_id="news-2"),
+    ]
+    calls: list[dict[str, object]] = []
+
+    async def fake_generate(event, items, **kwargs):
+        focus = kwargs.get("focus_item")
+        calls.append({"items": items, "focus": focus})
+        if focus is not None:
+            return "苹果发布会定档下月，估计又是老一套的挤牙膏。"
+        return "今天心情不错，随便说两句。"
+
+    plugin, captured, logger_stub = _news_plugin(main, tmp_path, candidates, fake_generate)
+    monkeypatch.setattr(main, "logger", logger_stub)
+
+    asyncio.run(plugin._auto_news_publish_once())
+
+    assert len(calls) == 2
+    assert calls[1]["focus"] is candidates[0]
+    state = json.loads((tmp_path / "news_publish_state.json").read_text(encoding="utf-8"))
+    assert state["published"][0]["candidate_ids"] == ["news-1"]
+    assert any("regenerating with focus" in line for line in logger_stub.infos)
+
+
+def test_llm_prompt_passes_empty_contexts_instead_of_typo_key() -> None:
+    """``context`` 是拼错的参数名，某些 provider 用 **kwargs 接住后会去读历史对话，
+    模型就顺着旧聊天写，正文和新闻完全无关。"""
+
+    source = (
+        Path(__file__).resolve().parent.parent.joinpath("qzone_bridge", "llm.py").read_text(encoding="utf-8")
+    )
+    assert '"context": []' not in source
+    assert '"contexts": []' in source

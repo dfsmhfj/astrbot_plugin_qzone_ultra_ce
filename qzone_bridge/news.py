@@ -32,6 +32,8 @@ ITHOME_RSS = "https://www.ithome.com/rss/"
 
 MIX_MODES = ("diverse", "balanced", "weighted", "latest")
 DEFAULT_MIX_MODE = "diverse"
+# 文案与某条候选新闻的最低关联分，低于它视为「没写清讲的是哪条新闻」。
+NEWS_REFERENCE_MIN_SCORE = 0.15
 
 
 @dataclass(frozen=True, slots=True)
@@ -575,6 +577,70 @@ def is_news_copy_like(text: str, items: list[NewsItem], *, threshold: float = 0.
         if SequenceMatcher(None, body, title).ratio() >= threshold:
             return True
     return False
+
+
+def _title_grams(text: str) -> set[str]:
+    """标题的字符二元组，用来做「文案到底在讲哪条新闻」的比对。"""
+
+    body = _normalize_copy_text(text)
+    if len(body) < 2:
+        return {body} if body else set()
+    return {body[index : index + 2] for index in range(len(body) - 1)}
+
+
+def _longest_common_run(left: str, right: str) -> int:
+    if not left or not right:
+        return 0
+    return SequenceMatcher(None, left, right).find_longest_match(0, len(left), 0, len(right)).size
+
+
+def news_reference_scores(text: str, items: list[NewsItem]) -> list[float]:
+    """给每条候选新闻打一个「这段文案是否在讲它」的 0~1 分。
+
+    做法是标题二元组的 IDF 加权覆盖率 + 最长公共子串奖励：
+    - 多条候选都含有的二元组（例如「发布」「回应」）权重低，避免假匹配；
+    - 命中标题里独有词（人名、地名、产品名）权重高。
+    """
+
+    body = _normalize_copy_text(text)
+    if not body or not items:
+        return [0.0 for _ in items]
+
+    text_grams = _title_grams(text)
+    title_grams = [_title_grams(item.title) for item in items]
+    doc_freq: dict[str, int] = {}
+    for grams in title_grams:
+        for gram in grams:
+            doc_freq[gram] = doc_freq.get(gram, 0) + 1
+
+    scores: list[float] = []
+    for item, grams in zip(items, title_grams):
+        if not grams:
+            scores.append(0.0)
+            continue
+        hit_weight = sum(1.0 / doc_freq[gram] for gram in grams if gram in text_grams)
+        total_weight = sum(1.0 / doc_freq[gram] for gram in grams)
+        coverage = hit_weight / total_weight if total_weight else 0.0
+        title_body = _normalize_copy_text(item.title)
+        run = _longest_common_run(body, title_body)
+        run_score = 0.0
+        if run >= 3:
+            run_score = min(1.0, run / max(4.0, len(title_body) * 0.5))
+        scores.append(round(max(coverage, run_score), 4))
+    return scores
+
+
+def best_matching_news_item(text: str, items: list[NewsItem]) -> tuple[NewsItem | None, float]:
+    """返回文案最可能对应的那条新闻及其得分；得分过低时新闻为 ``None``。"""
+
+    scores = news_reference_scores(text, items)
+    if not scores:
+        return None, 0.0
+    best_index = max(range(len(scores)), key=lambda index: scores[index])
+    best_score = scores[best_index]
+    if best_score < NEWS_REFERENCE_MIN_SCORE:
+        return None, best_score
+    return items[best_index], best_score
 
 
 class NewsRSSClient:

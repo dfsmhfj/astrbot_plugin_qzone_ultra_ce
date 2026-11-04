@@ -762,6 +762,7 @@ from qzone_bridge.models import FeedEntry
 from qzone_bridge.news import (
     NewsItem,
     NewsRSSClient,
+    best_matching_news_item,
     filter_recent_news,
     is_news_copy_like,
     mix_news_items,
@@ -3902,22 +3903,73 @@ class QzoneStablePlugin(Star):
             seen_ids=seen_ids or set(),
         )
 
-    async def _generate_news_post_text(self, event: AstrMessageEvent | None, items: list[NewsItem]) -> str:
-        return await self._llm_adapter().generate_news_post_text(event, items)
+    async def _generate_news_post_text(
+        self,
+        event: AstrMessageEvent | None,
+        items: list[NewsItem],
+        *,
+        focus_item: NewsItem | None = None,
+    ) -> str:
+        return await self._llm_adapter().generate_news_post_text(event, items, focus_item=focus_item)
 
     async def _generate_original_news_post_text(
         self,
         event: AstrMessageEvent | None,
         items: list[NewsItem],
+        *,
+        focus_item: NewsItem | None = None,
     ) -> str:
         for attempt in range(2):
-            text = (await self._generate_news_post_text(event, items)).strip()
+            text = (await self._generate_news_post_text(event, items, focus_item=focus_item)).strip()
             if not text:
                 return ""
             if not is_news_copy_like(text, items):
                 return text
             logger.warning("qzone news publish generated copy-like text on attempt %s; retrying", attempt + 1)
         return ""
+
+    async def _generate_news_post_with_reference(
+        self,
+        event: AstrMessageEvent | None,
+        items: list[NewsItem],
+    ) -> tuple[str, NewsItem | None]:
+        """生成新闻说说，并确认这段话到底在讲哪条新闻。
+
+        定时发布没有「选第几条」这一步，模型会自己从候选里挑一条。问题是它挑的
+        未必是 ``items[0]``，而记录和通知都写 ``items[0]``，于是用户看到的
+        「参考新闻」和正文对不上，像是发的内容与新闻无关。这里先把正文和每条
+        候选做一次关联度打分：
+
+        - 能对上某一条：就用那条作为实际参考新闻；
+        - 一条都对不上（说明模型写成了通用感慨）：改成只喂第一条新闻重写一次。
+        """
+
+        if not items:
+            return "", None
+        text = await self._generate_original_news_post_text(event, items)
+        if not text.strip():
+            return "", None
+
+        matched, score = best_matching_news_item(text, items)
+        logger.info(
+            "qzone news reference match candidates=%s score=%.3f matched=%s",
+            len(items),
+            score,
+            truncate(matched.title, 40) if matched is not None else "(未匹配)",
+        )
+        if matched is not None:
+            return text, matched
+
+        focus = items[0]
+        logger.info(
+            "qzone news post did not reference any candidate (score=%.3f); regenerating with focus=%s",
+            score,
+            truncate(focus.title, 40),
+        )
+        focused = await self._generate_original_news_post_text(event, [focus], focus_item=focus)
+        if focused.strip():
+            return focused, focus
+        return text, None
 
     @staticmethod
     def _news_items_summary(items: list[NewsItem], *, limit: int = 3) -> str:
@@ -4737,7 +4789,7 @@ class QzoneStablePlugin(Star):
             logger.info("qzone scheduled news publish skipped: no fresh news candidates")
             return
 
-        text = await self._generate_original_news_post_text(None, items)
+        text, reference = await self._generate_news_post_with_reference(None, items)
         if not text.strip():
             logger.info("qzone scheduled news publish skipped: generated content is empty or copy-like")
             return
@@ -4746,14 +4798,17 @@ class QzoneStablePlugin(Star):
         await self._ensure_cookie_ready()
         await self._ensure_daemon()
         payload = await self.controller.publish_post(content=post.content, content_sanitized=True)
-        self._record_news_publish(state, items=items, post=post, payload=payload)
+        # 只记录真正被写进说说里的那条新闻，避免「参考新闻」和正文对不上。
+        recorded_items = [reference] if reference is not None else items
+        self._record_news_publish(state, items=recorded_items, post=post, payload=payload)
         logger.info(
-            "qzone scheduled news publish succeeded fid=%s text_length=%s candidates=%s",
+            "qzone scheduled news publish succeeded fid=%s text_length=%s candidates=%s reference=%s",
             payload.get("fid") or "",
             len(post.content),
             len(items),
+            truncate(reference.title, 40) if reference is not None else "(无)",
         )
-        summary = self._news_items_summary(items, limit=1)
+        summary = self._news_items_summary(recorded_items, limit=1)
         message = "新闻自动发布完成"
         if summary:
             message = f"{message}\n参考新闻：\n{summary}"
